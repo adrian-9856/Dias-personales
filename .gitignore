@@ -1,0 +1,38 @@
+# Archivos de configuración con datos sensibles
+config.local.gs
+credentials.json
+.env
+
+# Archivos temporales
+*.tmp
+*.log
+~$*
+
+# Backups
+backup/
+*.backup
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Carpetas de editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos de Google Apps Script (si usas clasp)
+.clasp.json
+.claspignore
+
+# Node modules (si usas herramientas de desarrollo)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Archivos de prueba
+test-data/
+*.test.csv
