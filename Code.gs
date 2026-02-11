@@ -341,6 +341,7 @@ function agregarAlHistorial(registrosNuevos, headers) {
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
+    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
 
     const ultimaFila = sheet.getLastRow() + 1;
     const fechaProceso = new Date();
@@ -352,7 +353,11 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
       const fechaIni = colFechaInicio >= 0 ? (registro[colFechaInicio] || '') : '';
       const fechaFi  = colFechaFin    >= 0 ? (registro[colFechaFin]    || '') : '';
-      const diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
+      let diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
+      if (diasSolicitados === 0 && fechaIni !== '' && colDiasSolicitados >= 0) {
+        const valDias = parseInt((registro[colDiasSolicitados] || '0').toString().trim(), 10);
+        if (valDias > 0) diasSolicitados = valDias;
+      }
 
       return [
         idRegistro,
@@ -398,9 +403,11 @@ function procesarDatos(datosCSV) {
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
     const colReglamento = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
     const colConsentimiento = encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
+    // Fallback de días cuando no hay fecha fin (ej: "Día personal solicitado" = 1)
+    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
 
     Logger.log('Columnas identificadas - Equipo:' + colEquipo +
-      ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin);
+      ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin + ' DiasSolicitados:' + colDiasSolicitados);
 
     // Obtener mapeo de equipos a directores
     const mapeoDirectores = obtenerMapeoDirectores();
@@ -421,13 +428,17 @@ function procesarDatos(datosCSV) {
       const conoceReglamento = (colReglamento >= 0 ? (fila[colReglamento] || 'No especificado') : 'No especificado').toString().trim();
       const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
-      // Director siempre del mapeo por equipo (el formulario no tiene campo de director)
-      const infoDirector = mapeoDirectores[equipo] || { nombre: 'Sin asignar', correo: '' };
+      // Director del mapeo por equipo con comparación normalizada (ignora tildes y typos)
+      const infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipo) || { nombre: 'Sin asignar', correo: '' };
       const director = infoDirector.nombre;
       const correoDirector = infoDirector.correo;
 
-      // Calcular días entre fechas
-      const diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
+      // Calcular días: si no hay fecha fin, usar el campo "Día personal solicitado"
+      let diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
+      if (diasSolicitados === 0 && fechaInicio !== '' && colDiasSolicitados >= 0) {
+        const valDias = parseInt((fila[colDiasSolicitados] || '0').toString().trim(), 10);
+        if (valDias > 0) diasSolicitados = valDias;
+      }
 
       // Agrupar por empleado
       if (!empleadosMap.has(nombre)) {
@@ -612,6 +623,29 @@ function encontrarColumna(headers, palabrasClave) {
   }
   Logger.log('Columna no encontrada para: ' + palabrasClave.join(', ') + '. Retornando -1 (no disponible).');
   return -1;
+}
+
+/**
+ * Normaliza texto para comparación: minúsculas, sin acentos, sin espacios extras.
+ */
+function normalizarTexto(texto) {
+  return texto.toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Busca el director de un equipo usando comparación normalizada (ignora acentos y mayúsculas).
+ * Necesario porque el CSV puede tener "Gestion de Impacto" mientras el config tiene "Gestión de Impacto".
+ */
+function buscarDirectorPorEquipo(mapeoDirectores, equipo) {
+  if (!equipo) return null;
+  if (mapeoDirectores[equipo]) return mapeoDirectores[equipo];
+  var equipoNorm = normalizarTexto(equipo);
+  for (var key in mapeoDirectores) {
+    if (normalizarTexto(key) === equipoNorm) return mapeoDirectores[key];
+  }
+  return null;
 }
 
 /**
