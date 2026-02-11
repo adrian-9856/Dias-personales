@@ -34,6 +34,18 @@ const CONFIG = {
     'Inclusión Laboral'
   ],
 
+  // Directores por equipo [nombre, correo]
+  DIRECTORES_DEFAULT: {
+    'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',        correo: 'melissa@creamosguatemala.org' },
+    'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',   correo: 'renato@creamosguatemala.org' },
+    'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',correo: 'stephany@creamosguatemala.org' },
+    'Gestión de Impacto':        { nombre: 'Eneko Arberas García',              correo: 'eneko@creamosguatemala.org' },
+    'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',      correo: 'rossana@creamosguatemala.org' },
+    'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher', correo: 'carmen@creamosguatemala.org' },
+    'Administración':            { nombre: 'Carmen Lucía Carías González de Zacher', correo: 'carmen@creamosguatemala.org' },
+    'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',    correo: 'alejandra@creamosguatemala.org' }
+  },
+
   // Correos de empleados (nombre completo → correo)
   CORREOS_EMPLEADOS: {
     'Laura Alejandra Castañeda Leal':             'alejandra@creamosguatemala.org',
@@ -535,8 +547,8 @@ function obtenerMapeoDirectores() {
     const sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DIRECTORES);
 
     if (!sheet || sheet.getLastRow() <= 2) {
-      Logger.log('No existe mapeo de directores o está vacío. Los directores del formulario serán usados si existen.');
-      return {};
+      Logger.log('No existe mapeo de directores o está vacío. Usando directores por defecto del CONFIG.');
+      return CONFIG.DIRECTORES_DEFAULT;
     }
 
     const ultimaFila = sheet.getLastRow();
@@ -1241,8 +1253,11 @@ function crearHojaDirectores() {
     .setFontWeight('bold')
     .setBackground('#e8f0fe');
 
-  // Agregar fila por cada equipo configurado
-  const equipos = CONFIG.EQUIPOS.map(function(equipo) { return [equipo, '', '']; });
+  // Agregar fila por cada equipo con director y correo pre-cargados
+  const equipos = CONFIG.EQUIPOS.map(function(equipo) {
+    const dir = CONFIG.DIRECTORES_DEFAULT[equipo] || { nombre: '', correo: '' };
+    return [equipo, dir.nombre, dir.correo];
+  });
   sheet.getRange(3, 1, equipos.length, 3).setValues(equipos);
 
   sheet.autoResizeColumn(1);
@@ -1257,8 +1272,8 @@ function crearHojaDirectores() {
   sheet.getRange(startRow + 3, 1).setValue('3. Los correos se enviarán automáticamente a estos directores cuando uses "Enviar Reporte a Directores"');
   sheet.getRange(startRow + 4, 1).setValue('4. Si el formulario de KoboToolbox ya incluye el campo "director", ese valor tendrá prioridad');
 
-  Logger.log('Hoja de directores creada/actualizada');
-  SpreadsheetApp.getActiveSpreadsheet().toast('Hoja de directores lista. Completa los nombres y correos.', 'Directores', 5);
+  Logger.log('Hoja de directores creada/actualizada con datos pre-cargados');
+  SpreadsheetApp.getActiveSpreadsheet().toast('Hoja de directores lista con directores pre-cargados. Verifica y ajusta si es necesario.', 'Directores', 7);
 }
 
 /**
