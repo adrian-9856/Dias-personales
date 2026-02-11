@@ -101,6 +101,34 @@ function ejecutarAutomatico() {
 }
 
 /**
+ * Lee un valor de la hoja de configuración buscando la etiqueta en la columna A.
+ * Más robusto que leer por celda fija, porque no depende de en qué fila está el dato.
+ * @param {Sheet} sheet - Hoja de configuración
+ * @param {string} etiqueta - Texto a buscar en columna A (ej: 'Token KoboToolbox:')
+ * @param {*} valorDefecto - Valor a devolver si no se encuentra la etiqueta
+ */
+function leerConfigPorEtiqueta(sheet, etiqueta, valorDefecto) {
+  try {
+    const ultimaFila = sheet.getLastRow();
+    if (ultimaFila < 1) return valorDefecto;
+
+    const datos = sheet.getRange(1, 1, ultimaFila, 2).getValues();
+    for (let i = 0; i < datos.length; i++) {
+      if (datos[i][0].toString().trim().toLowerCase() === etiqueta.toLowerCase()) {
+        const val = datos[i][1];
+        if (val !== null && val !== undefined && val.toString().trim() !== '') {
+          return val;
+        }
+        return valorDefecto;
+      }
+    }
+    return valorDefecto;
+  } catch (e) {
+    return valorDefecto;
+  }
+}
+
+/**
  * Obtiene datos desde la API de KoboToolbox
  */
 function obtenerDatosKoboToolbox() {
@@ -110,14 +138,28 @@ function obtenerDatosKoboToolbox() {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
 
     if (!sheet) {
-      throw new Error('No existe la hoja "' + CONFIG.SHEET_NAME_CONFIG + '". Por favor ejecuta "Crear Configuración" primero.');
+      throw new Error('No existe la hoja "' + CONFIG.SHEET_NAME_CONFIG + '". Ve al menú > "Crear/Actualizar Configuración" primero.');
     }
 
-    const token = sheet.getRange('B3').getValue();
-    const apiUrl = sheet.getRange('B4').getValue() || CONFIG.KOBO_API_URL;
+    // Leer por etiqueta para no depender de la posición exacta de la celda
+    const token = leerConfigPorEtiqueta(sheet, 'Token KoboToolbox:', null);
+    const apiUrl = leerConfigPorEtiqueta(sheet, 'URL API KoboToolbox:', CONFIG.KOBO_API_URL);
 
     if (!token || token.toString().trim() === '') {
-      throw new Error('No se ha configurado el token de KoboToolbox. Por favor, configúralo en la hoja "Configuración", celda B3.');
+      throw new Error(
+        'Token de KoboToolbox no configurado.\n' +
+        '1. Ve al menú > "Crear/Actualizar Configuración"\n' +
+        '2. En la hoja "Configuración", escribe tu token en la columna B junto a la etiqueta "Token KoboToolbox:"'
+      );
+    }
+
+    // Validar que la URL sea realmente una URL antes de hacer el fetch
+    const urlStr = apiUrl.toString().trim();
+    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
+      throw new Error(
+        'La URL de la API no es válida: "' + urlStr + '".\n' +
+        'Ve al menú > "Crear/Actualizar Configuración" para restaurar la URL correcta en la hoja "Configuración".'
+      );
     }
 
     const options = {
@@ -128,7 +170,7 @@ function obtenerDatosKoboToolbox() {
       muteHttpExceptions: true
     };
 
-    const response = UrlFetchApp.fetch(apiUrl.toString().trim(), options);
+    const response = UrlFetchApp.fetch(urlStr, options);
     const responseCode = response.getResponseCode();
 
     if (responseCode === 401) {
@@ -788,17 +830,18 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
       return;
     }
 
-    const enviarCorreos = sheet.getRange('B6').getValue();
+    const enviarCorreos = leerConfigPorEtiqueta(sheet, 'Enviar correos (TRUE/FALSE):', false);
 
     if (!enviarCorreos || enviarCorreos.toString().toLowerCase() !== 'true') {
-      Logger.log('Envío de correos deshabilitado (B6 no es TRUE)');
+      Logger.log('Envío de correos deshabilitado');
       return;
     }
 
-    const correoAdmin = sheet.getRange('B7').getValue();
+    const correoAdmin = leerConfigPorEtiqueta(sheet, 'Correo del administrador: (*)', null)
+      || leerConfigPorEtiqueta(sheet, 'Correo del administrador:', null);
 
     if (!correoAdmin || correoAdmin.toString().trim() === '') {
-      Logger.log('No se ha configurado correo del administrador en B7');
+      Logger.log('No se ha configurado correo del administrador');
       return;
     }
 
@@ -875,7 +918,8 @@ function enviarCorreoError(error) {
 
     if (!sheet) return;
 
-    const correoAdmin = sheet.getRange('B7').getValue();
+    const correoAdmin = leerConfigPorEtiqueta(sheet, 'Correo del administrador: (*)', null)
+      || leerConfigPorEtiqueta(sheet, 'Correo del administrador:', null);
 
     if (!correoAdmin || correoAdmin.toString().trim() === '') return;
 
@@ -906,7 +950,7 @@ function enviarCorreosDirectores(resumen) {
       return;
     }
 
-    const enviarCorreos = sheet.getRange('B6').getValue();
+    const enviarCorreos = leerConfigPorEtiqueta(sheet, 'Enviar correos (TRUE/FALSE):', false);
 
     if (!enviarCorreos || enviarCorreos.toString().toLowerCase() !== 'true') {
       Logger.log('Envío de correos a directores deshabilitado');
@@ -1032,46 +1076,60 @@ function crearCuerpoCorreoDirector(director) {
 function crearHojaConfiguracion() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+  const esNueva = !sheet;
 
-  if (!sheet) {
+  if (esNueva) {
     sheet = ss.insertSheet(CONFIG.SHEET_NAME_CONFIG);
   }
 
+  // Preservar valores que el usuario ya haya ingresado antes de limpiar
+  const tokenExistente = esNueva ? '' : leerConfigPorEtiqueta(sheet, 'Token KoboToolbox:', '');
+  const correoExistente = esNueva ? '' : leerConfigPorEtiqueta(sheet, 'Correo del administrador:', '');
+  const urlExistente = esNueva ? CONFIG.KOBO_API_URL : leerConfigPorEtiqueta(sheet, 'URL API KoboToolbox:', CONFIG.KOBO_API_URL);
+  const diasExistentes = esNueva ? CONFIG.DIAS_TOTALES : leerConfigPorEtiqueta(sheet, 'Días personales totales:', CONFIG.DIAS_TOTALES);
+  const correosActivoExistente = esNueva ? false : leerConfigPorEtiqueta(sheet, 'Enviar correos (TRUE/FALSE):', false);
+
   sheet.clear();
 
+  // Título
   sheet.getRange('A1').setValue('CONFIGURACIÓN DEL SISTEMA')
-    .setFontSize(14)
-    .setFontWeight('bold')
-    .setBackground('#4285f4')
-    .setFontColor('#ffffff');
+    .setFontSize(14).setFontWeight('bold')
+    .setBackground('#4285f4').setFontColor('#ffffff');
   sheet.getRange('A1:B1').merge();
 
-  // Fila 2: Subtítulo
-  sheet.getRange('A2').setValue('Completa todos los campos para que el sistema funcione correctamente.')
+  // Subtítulo
+  sheet.getRange('A2').setValue('Completa los campos marcados con (*). Los demás tienen valores por defecto.')
     .setFontStyle('italic').setFontColor('#666666');
   sheet.getRange('A2:B2').merge();
 
+  // Campos de configuración — SIEMPRE en filas 3-7
   const configData = [
-    ['Token KoboToolbox:', ''],                  // Fila 3 -> B3
-    ['URL API KoboToolbox:', CONFIG.KOBO_API_URL], // Fila 4 -> B4
-    ['Días personales totales:', CONFIG.DIAS_TOTALES], // Fila 5 -> B5
-    ['Enviar correos (TRUE/FALSE):', false],      // Fila 6 -> B6
-    ['Correo del administrador:', ''],            // Fila 7 -> B7
+    ['Token KoboToolbox: (*)',          tokenExistente],
+    ['URL API KoboToolbox:',            urlExistente],
+    ['Días personales totales:',        diasExistentes],
+    ['Enviar correos (TRUE/FALSE):',    correosActivoExistente],
+    ['Correo del administrador: (*)',   correoExistente]
   ];
 
   sheet.getRange(3, 1, configData.length, 2).setValues(configData);
   sheet.getRange(3, 1, configData.length, 1).setFontWeight('bold');
 
+  // Resaltar filas obligatorias
+  sheet.getRange('A3:B3').setBackground('#fff3cd'); // Token - amarillo
+  sheet.getRange('A7:B7').setBackground('#fff3cd'); // Correo - amarillo
+
   // Instrucciones
   const instrucciones = [
     ['INSTRUCCIONES:', ''],
-    ['1. Ingresa tu token de KoboToolbox en la celda B3', ''],
-    ['2. Verifica o actualiza la URL de la API en B4', ''],
-    ['3. Ajusta los días personales totales en B5 (por defecto: 15)', ''],
-    ['4. Escribe TRUE en B6 para activar el envío de correos', ''],
-    ['5. Ingresa tu correo en B7 para recibir notificaciones de errores y nuevos registros', ''],
-    ['6. Ve al menú "Días Personales" > "Configurar Directores" para asignar directores a equipos', ''],
-    ['7. Ve al menú "Días Personales" > "Configurar Trigger Automático" para automatizar la ejecución', '']
+    ['1. (*) Ingresa tu token de KoboToolbox en la columna B de la fila "Token KoboToolbox"', ''],
+    ['2. La URL de la API ya está pre-cargada. Solo cámbiala si usas otra exportación de KoboToolbox', ''],
+    ['3. Ajusta los días personales si es necesario (por defecto: 15 = 7 en S1 + 8 en S2)', ''],
+    ['4. Escribe TRUE en "Enviar correos" para activar notificaciones por correo', ''],
+    ['5. (*) Ingresa tu correo en "Correo del administrador" para recibir notificaciones', ''],
+    ['6. Menú > "Configurar Directores" para asignar directores a cada equipo', ''],
+    ['7. Menú > "Configurar Trigger Automático" para ejecutar el sistema cada 15 minutos', ''],
+    ['', ''],
+    ['NOTA: Las celdas amarillas son obligatorias para que el sistema funcione.', '']
   ];
 
   const startRow = 3 + configData.length + 1;
@@ -1081,8 +1139,12 @@ function crearHojaConfiguracion() {
   sheet.autoResizeColumn(1);
   sheet.setColumnWidth(2, 500);
 
-  Logger.log('Hoja de configuración creada/actualizada');
-  SpreadsheetApp.getActiveSpreadsheet().toast('Hoja de configuración lista. Completa el token y correo.', 'Configuración', 5);
+  Logger.log('Hoja de configuración creada/actualizada (token y correo previos preservados)');
+
+  const msg = tokenExistente
+    ? 'Configuración actualizada. Tu token y correo se conservaron.'
+    : 'Hoja de configuración lista. Completa el token (fila amarilla) y tu correo.';
+  SpreadsheetApp.getActiveSpreadsheet().toast(msg, 'Configuración', 7);
 }
 
 /**
