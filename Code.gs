@@ -237,7 +237,8 @@ function obtenerDatosKoboToolbox() {
       throw new Error('Error al conectar con KoboToolbox. Código HTTP: ' + responseCode + '. Verifica tu token y URL.');
     }
 
-    const csvData = response.getContentText();
+    // Forzar UTF-8 y eliminar BOM (\uFEFF) que rompe Utilities.parseCsv
+    const csvData = response.getContentText('UTF-8').replace(/^\uFEFF/, '');
 
     if (!csvData || csvData.trim() === '') {
       throw new Error('KoboToolbox devolvió datos vacíos. Verifica que el formulario tenga respuestas.');
