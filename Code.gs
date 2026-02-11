@@ -1280,19 +1280,25 @@ function crearHojaDirectores() {
  * Crea el menú personalizado al abrir la hoja
  */
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('Días Personales')
-    .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
-    .addSeparator()
-    .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
-    .addItem('👥 Configurar Directores', 'crearHojaDirectores')
-    .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
-    .addSeparator()
-    .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
-    .addSeparator()
-    .addItem('🔁 Reinstalar Sistema Completo', 'reinstalarSistema')
-    .addItem('ℹ Ayuda', 'mostrarAyuda')
-    .addToUi();
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('Días Personales')
+      .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
+      .addSeparator()
+      .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
+      .addItem('👥 Configurar Directores', 'crearHojaDirectores')
+      .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
+      .addSeparator()
+      .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
+      .addSeparator()
+      .addItem('🔁 Reinstalar Sistema Completo', 'reinstalarSistema')
+      .addItem('ℹ Ayuda', 'mostrarAyuda')
+      .addToUi();
+  } catch (e) {
+    // onOpen fue llamada fuera del contexto del spreadsheet (ej: editor de Apps Script).
+    // No hay nada que hacer; el menú solo existe cuando se abre el Sheet.
+    Logger.log('onOpen: sin contexto de UI (' + e.message + ')');
+  }
 }
 
 /**
