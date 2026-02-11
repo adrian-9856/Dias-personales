@@ -256,7 +256,8 @@ function obtenerDatosKoboToolbox() {
       throw new Error('KoboToolbox devolvió JSON en lugar de CSV. Verifica que la URL apunte a una exportación CSV (termina en data.csv).');
     }
 
-    const parsedData = Utilities.parseCsv(csvData);
+    // KoboToolbox exporta con punto y coma como separador
+    const parsedData = Utilities.parseCsv(csvData, ';');
 
     Logger.log('Datos obtenidos exitosamente: ' + parsedData.length + ' filas (incluyendo encabezados)');
     return parsedData;
