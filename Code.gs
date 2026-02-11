@@ -338,7 +338,6 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
     // Identificar columnas relevantes del formulario
     const idIndex = encontrarColumna(headers, ['_id', '_uuid', 'uuid', 'submission_id', 'id']);
-    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo', '_submitted_by', 'submitted_by', 'username']);
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
@@ -347,19 +346,21 @@ function agregarAlHistorial(registrosNuevos, headers) {
     const fechaProceso = new Date();
 
     const datosHistorial = registrosNuevos.map(function(registro) {
-      const idRegistro = (registro[idIndex] !== undefined && registro[idIndex] !== '')
+      const idRegistro = (idIndex >= 0 && registro[idIndex] !== undefined && registro[idIndex] !== '')
         ? registro[idIndex].toString()
         : registro.join('|||');
 
-      const diasSolicitados = calcularDiasEntreFechas(registro[colFechaInicio], registro[colFechaFin]);
+      const fechaIni = colFechaInicio >= 0 ? (registro[colFechaInicio] || '') : '';
+      const fechaFi  = colFechaFin    >= 0 ? (registro[colFechaFin]    || '') : '';
+      const diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
 
       return [
         idRegistro,
         fechaProceso,
-        registro[colNombre] || 'Sin nombre',
-        registro[colEquipo] || 'Sin equipo',
-        registro[colFechaInicio] || '',
-        registro[colFechaFin] || '',
+        extraerNombreDeFila(headers, registro) || 'Sin nombre',
+        colEquipo >= 0 ? (registro[colEquipo] || 'Sin equipo') : 'Sin equipo',
+        fechaIni,
+        fechaFi,
         diasSolicitados,
         'Procesado'
       ];
@@ -391,17 +392,14 @@ function procesarDatos(datosCSV) {
     // Escribir datos crudos en hoja
     escribirDatosKobo(datosCSV);
 
-    // Identificar columnas con valor por defecto -1 para detectar columnas no encontradas
-    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo', '_submitted_by', 'submitted_by', 'username']);
+    // Identificar columnas de equipo, fechas y consentimiento
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
     const colReglamento = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
     const colConsentimiento = encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
-    const colDirector = encontrarColumna(headers, ['director', 'supervisor', 'nombre_director']);
-    const colCorreoDirector = encontrarColumna(headers, ['correo_director', 'email_director', 'correo_del_director']);
 
-    Logger.log('Columnas identificadas - Nombre:' + colNombre + ' Equipo:' + colEquipo +
+    Logger.log('Columnas identificadas - Equipo:' + colEquipo +
       ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin);
 
     // Obtener mapeo de equipos a directores
@@ -415,17 +413,18 @@ function procesarDatos(datosCSV) {
         return; // Saltar filas vacías
       }
 
-      const nombre = (fila[colNombre] || '').toString().trim() || 'Sin nombre';
-      const equipo = (fila[colEquipo] || '').toString().trim() || 'Sin equipo';
-      const fechaInicio = (fila[colFechaInicio] || '').toString().trim();
-      const fechaFin = (fila[colFechaFin] || '').toString().trim();
-      const conoceReglamento = (fila[colReglamento] || 'No especificado').toString().trim();
-      const tieneConsentimiento = (fila[colConsentimiento] || 'No especificado').toString().trim();
+      // El nombre está dentro de la columna de su equipo (estructura del formulario KoboToolbox)
+      const nombre = extraerNombreDeFila(headers, fila) || 'Sin nombre';
+      const equipo = (colEquipo >= 0 ? (fila[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
+      const fechaInicio = (colFechaInicio >= 0 ? (fila[colFechaInicio] || '') : '').toString().trim();
+      const fechaFin = (colFechaFin >= 0 ? (fila[colFechaFin] || '') : '').toString().trim();
+      const conoceReglamento = (colReglamento >= 0 ? (fila[colReglamento] || 'No especificado') : 'No especificado').toString().trim();
+      const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
-      // Obtener director y correo: primero del formulario, luego del mapeo
+      // Director siempre del mapeo por equipo (el formulario no tiene campo de director)
       const infoDirector = mapeoDirectores[equipo] || { nombre: 'Sin asignar', correo: '' };
-      const director = ((fila[colDirector] || '').toString().trim()) || infoDirector.nombre;
-      const correoDirector = ((fila[colCorreoDirector] || '').toString().trim()) || infoDirector.correo;
+      const director = infoDirector.nombre;
+      const correoDirector = infoDirector.correo;
 
       // Calcular días entre fechas
       const diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
@@ -613,6 +612,42 @@ function encontrarColumna(headers, palabrasClave) {
   }
   Logger.log('Columna no encontrada para: ' + palabrasClave.join(', ') + '. Retornando -1 (no disponible).');
   return -1;
+}
+
+/**
+ * Extrae el nombre del empleado de las columnas de departamento del formulario.
+ * El formulario KoboToolbox tiene una columna por cada equipo; el nombre del empleado
+ * aparece en la columna de su equipo (el resto quedan vacías).
+ * Como respaldo usa _submitted_by (username de KoboToolbox).
+ */
+function extraerNombreDeFila(headers, fila) {
+  var clavesEquipos = [
+    'inclusión laboral', 'inclusion laboral',
+    'centro de cuidado',
+    'apoyo emocional', 'apoyo emocinal',
+    'operaciones',
+    'mi-eelo',
+    'gestión de impacto', 'gestion de impacto',
+    'educación', 'educacion',
+    'administración', 'administracion'
+  ];
+  for (var i = 0; i < headers.length; i++) {
+    var header = headers[i].toString().toLowerCase().trim();
+    for (var j = 0; j < clavesEquipos.length; j++) {
+      if (header.includes(clavesEquipos[j])) {
+        var val = (fila[i] || '').toString().trim();
+        if (val !== '') return val;
+        break; // columna encontrada pero vacía, pasar a la siguiente
+      }
+    }
+  }
+  // Respaldo: _submitted_by de KoboToolbox
+  var idxUser = encontrarColumna(headers, ['_submitted_by', 'submitted_by', 'username']);
+  if (idxUser >= 0) {
+    var valUser = (fila[idxUser] || '').toString().trim();
+    if (valUser !== '') return valUser;
+  }
+  return '';
 }
 
 /**
@@ -911,14 +946,13 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
       return;
     }
 
-    // Identificar columnas para construir el correo con datos reales
-    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo', '_submitted_by', 'submitted_by', 'username']);
+    // Identificar columnas de equipo y fechas para el correo
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
 
     const asunto = 'Nueva(s) solicitud(es) de días personales - ' + registrosNuevos.length + ' registro(s)';
-    const cuerpo = crearCorreoNuevoRegistro(registrosNuevos, colNombre, colEquipo, colFechaInicio, colFechaFin);
+    const cuerpo = crearCorreoNuevoRegistro(registrosNuevos, headers, colEquipo, colFechaInicio, colFechaFin);
 
     MailApp.sendEmail({
       to: correoAdmin.toString().trim(),
@@ -930,15 +964,15 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
 
     // Enviar confirmación a cada empleado cuya solicitud fue procesada
     registrosNuevos.forEach(function(reg) {
-      const nombreEmpleado = (reg[colNombre] || '').toString().trim();
+      const nombreEmpleado = extraerNombreDeFila(headers, reg);
       const correoEmpleado = CONFIG.CORREOS_EMPLEADOS[nombreEmpleado];
       if (!correoEmpleado) {
         Logger.log('No se encontró correo para: ' + nombreEmpleado);
         return;
       }
       try {
-        const fechaInicio = reg[colFechaInicio] || 'No especificada';
-        const fechaFin    = reg[colFechaFin]    || 'No especificada';
+        const fechaInicio = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
+        const fechaFin    = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
         const cuerpoEmp =
           '<p>Hola <strong>' + nombreEmpleado + '</strong>,</p>' +
           '<p>Tu solicitud de días personales ha sido registrada correctamente:</p>' +
@@ -967,14 +1001,14 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
 /**
  * Crea el cuerpo del correo para nuevos registros
  */
-function crearCorreoNuevoRegistro(registros, colNombre, colEquipo, colFechaInicio, colFechaFin) {
+function crearCorreoNuevoRegistro(registros, headers, colEquipo, colFechaInicio, colFechaFin) {
   const items = registros.map(function(reg, index) {
     return '<tr>' +
       '<td>' + (index + 1) + '</td>' +
-      '<td>' + (reg[colNombre] || 'Sin nombre') + '</td>' +
-      '<td>' + (reg[colEquipo] || 'Sin equipo') + '</td>' +
-      '<td>' + (reg[colFechaInicio] || 'No especificada') + '</td>' +
-      '<td>' + (reg[colFechaFin] || 'No especificada') + '</td>' +
+      '<td>' + (extraerNombreDeFila(headers, reg) || 'Sin nombre') + '</td>' +
+      '<td>' + (colEquipo >= 0 ? (reg[colEquipo] || 'Sin equipo') : 'Sin equipo') + '</td>' +
+      '<td>' + (colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada') + '</td>' +
+      '<td>' + (colFechaFin >= 0 ? (reg[colFechaFin] || 'No especificada') : 'No especificada') + '</td>' +
       '</tr>';
   }).join('');
 
