@@ -243,6 +243,18 @@ function obtenerDatosKoboToolbox() {
       throw new Error('KoboToolbox devolvió datos vacíos. Verifica que el formulario tenga respuestas.');
     }
 
+    // Log de diagnóstico: primeros 300 caracteres de la respuesta
+    Logger.log('Respuesta KoboToolbox (primeros 300 chars): ' + csvData.substring(0, 300));
+
+    // Detectar si la respuesta es HTML o JSON en lugar de CSV
+    const inicio = csvData.trim().substring(0, 5).toLowerCase();
+    if (inicio.startsWith('<!doc') || inicio.startsWith('<html')) {
+      throw new Error('KoboToolbox devolvió una página HTML en lugar de CSV. Verifica que la URL sea correcta y el token tenga acceso a esta exportación.');
+    }
+    if (inicio.startsWith('{') || inicio.startsWith('[')) {
+      throw new Error('KoboToolbox devolvió JSON en lugar de CSV. Verifica que la URL apunte a una exportación CSV (termina en data.csv).');
+    }
+
     const parsedData = Utilities.parseCsv(csvData);
 
     Logger.log('Datos obtenidos exitosamente: ' + parsedData.length + ' filas (incluyendo encabezados)');
