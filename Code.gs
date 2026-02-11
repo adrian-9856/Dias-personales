@@ -1199,15 +1199,149 @@ function crearHojaDirectores() {
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Días Personales')
-    .addItem('Actualizar Datos Manualmente', 'ejecutarSistema')
+    .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
     .addSeparator()
-    .addItem('Crear/Actualizar Configuración', 'crearHojaConfiguracion')
-    .addItem('Configurar Directores', 'crearHojaDirectores')
-    .addItem('Configurar Trigger Automático', 'configurarTriggerAutomatico')
+    .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
+    .addItem('👥 Configurar Directores', 'crearHojaDirectores')
+    .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
     .addSeparator()
-    .addItem('Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
-    .addItem('Ayuda', 'mostrarAyuda')
+    .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
+    .addSeparator()
+    .addItem('🔁 Reinstalar Sistema Completo', 'reinstalarSistema')
+    .addItem('ℹ Ayuda', 'mostrarAyuda')
     .addToUi();
+}
+
+/**
+ * Reinstala el sistema completo:
+ * 1. Elimina todas las hojas del sistema
+ * 2. Recrea hojas de Configuración y Directores desde cero
+ * 3. Elimina triggers anteriores
+ * 4. Configura trigger automático
+ * 5. Guía al usuario para completar el token
+ */
+function reinstalarSistema() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Confirmación con advertencia clara
+  const confirmacion = ui.alert(
+    '⚠ Reinstalar Sistema Completo',
+    'Esto eliminará y recreará las siguientes hojas:\n\n' +
+    '  • ' + CONFIG.SHEET_NAME_CONFIG + '\n' +
+    '  • ' + CONFIG.SHEET_NAME_DIRECTORES + '\n' +
+    '  • ' + CONFIG.SHEET_NAME_DATOS + '\n' +
+    '  • ' + CONFIG.SHEET_NAME_RESUMEN + '\n' +
+    '  • ' + CONFIG.SHEET_NAME_HISTORIAL + '\n\n' +
+    '⚠ ATENCIÓN: Se perderán todos los datos históricos y la configuración actual.\n\n' +
+    '¿Deseas continuar?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (confirmacion !== ui.Button.YES) {
+    ui.alert('Reinstalación cancelada.', '', ui.ButtonSet.OK);
+    return;
+  }
+
+  const ss2 = SpreadsheetApp.getActiveSpreadsheet();
+
+  try {
+    // ── PASO 1: Eliminar hojas del sistema ────────────────────────────────────
+    const hojasASistema = [
+      CONFIG.SHEET_NAME_CONFIG,
+      CONFIG.SHEET_NAME_DIRECTORES,
+      CONFIG.SHEET_NAME_DATOS,
+      CONFIG.SHEET_NAME_RESUMEN,
+      CONFIG.SHEET_NAME_HISTORIAL
+    ];
+
+    // Asegurarse de que quede al menos una hoja activa en el spreadsheet
+    // antes de borrar (Google Sheets requiere mínimo una hoja)
+    const todasLasHojas = ss2.getSheets();
+    const hojasQueQuedan = todasLasHojas.filter(function(h) {
+      return hojasASistema.indexOf(h.getName()) === -1;
+    });
+
+    // Si todas las hojas son del sistema, crear una hoja temporal primero
+    let hojaTemporal = null;
+    if (hojasQueQuedan.length === 0) {
+      hojaTemporal = ss2.insertSheet('_temporal_');
+    }
+
+    // Eliminar hojas del sistema
+    hojasASistema.forEach(function(nombre) {
+      const hoja = ss2.getSheetByName(nombre);
+      if (hoja) {
+        ss2.deleteSheet(hoja);
+        Logger.log('Hoja eliminada: ' + nombre);
+      }
+    });
+
+    // ── PASO 2: Eliminar triggers anteriores ─────────────────────────────────
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(function(trigger) {
+      if (trigger.getHandlerFunction() === 'ejecutarAutomatico') {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+    Logger.log('Triggers eliminados');
+
+    // ── PASO 3: Recrear hoja de Configuración ────────────────────────────────
+    crearHojaConfiguracion();
+
+    // ── PASO 4: Recrear hoja de Directores ───────────────────────────────────
+    crearHojaDirectores();
+
+    // ── PASO 5: Crear hojas vacías para Datos, Resumen e Historial ───────────
+    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
+      if (!ss2.getSheetByName(nombre)) {
+        ss2.insertSheet(nombre);
+        Logger.log('Hoja creada vacía: ' + nombre);
+      }
+    });
+
+    // ── PASO 6: Eliminar hoja temporal si se creó ─────────────────────────────
+    if (hojaTemporal) {
+      ss2.deleteSheet(hojaTemporal);
+    }
+
+    // ── PASO 7: Configurar trigger automático ─────────────────────────────────
+    ScriptApp.newTrigger('ejecutarAutomatico')
+      .timeBased()
+      .everyMinutes(15)
+      .create();
+    Logger.log('Trigger automático configurado (cada 15 minutos)');
+
+    // ── PASO 8: Activar hoja de Configuración para que el usuario la vea ─────
+    const hojaConfig = ss2.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+    if (hojaConfig) {
+      ss2.setActiveSheet(hojaConfig);
+    }
+
+    // Mensaje final con instrucciones
+    ui.alert(
+      '✅ Sistema reinstalado correctamente',
+      'Todo está listo. Ahora debes completar 2 pasos:\n\n' +
+      '1. En la hoja "Configuración" (ya abierta):\n' +
+      '   → Escribe tu token de KoboToolbox en la celda amarilla "Token KoboToolbox: (*)"\n' +
+      '   → Escribe tu correo en la celda amarilla "Correo del administrador: (*)"\n\n' +
+      '2. En la hoja "Directores":\n' +
+      '   → Completa el nombre y correo de cada director\n\n' +
+      '3. Cuando termines, ve al menú > "▶ Actualizar Datos Manualmente" para probar.\n\n' +
+      'El trigger automático ya está activo (cada 15 minutos).',
+      ui.ButtonSet.OK
+    );
+
+    Logger.log('Reinstalación completada exitosamente');
+
+  } catch (error) {
+    Logger.log('Error en reinstalarSistema: ' + error.message);
+    ui.alert(
+      'Error durante la reinstalación',
+      'Ocurrió un error: ' + error.message + '\n\nRevisa el log en Extensiones > Apps Script > Registros.',
+      ui.ButtonSet.OK
+    );
+  }
 }
 
 /**
