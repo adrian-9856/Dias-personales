@@ -182,15 +182,22 @@ function obtenerDatosKoboToolbox() {
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
 
+    // Si no existe la hoja de Configuración, crearla automáticamente con los defaults
     if (!sheet) {
-      throw new Error('No existe la hoja "' + CONFIG.SHEET_NAME_CONFIG + '". Ve al menú > "Crear/Actualizar Configuración" primero.');
+      Logger.log('Hoja de configuración no encontrada. Creándola automáticamente...');
+      crearHojaConfiguracion();
+      sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
     }
 
-    // Leer por etiqueta para no depender de la posición exacta de la celda
-    const token = leerConfigPorEtiqueta(sheet, 'Token KoboToolbox:', null);
+    // Leer token; si está vacío en la hoja usar el token por defecto del CONFIG
+    const tokenHoja = leerConfigPorEtiqueta(sheet, 'Token KoboToolbox:', null);
+    const token = (tokenHoja && tokenHoja.toString().trim() !== '')
+      ? tokenHoja.toString().trim()
+      : CONFIG.KOBO_TOKEN_DEFAULT;
+
     const apiUrl = leerConfigPorEtiqueta(sheet, 'URL API KoboToolbox:', CONFIG.KOBO_API_URL);
 
-    if (!token || token.toString().trim() === '') {
+    if (!token || token.trim() === '') {
       throw new Error(
         'Token de KoboToolbox no configurado.\n' +
         '1. Ve al menú > "Crear/Actualizar Configuración"\n' +
