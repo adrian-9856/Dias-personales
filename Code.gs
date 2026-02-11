@@ -13,6 +13,8 @@
 
 const CONFIG = {
   KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/esigRStULsbGhgCaayXsgHC/data.csv',
+  KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
+  ADMIN_EMAIL_DEFAULT: 'admin@creamosguatemala.org',
   DIAS_TOTALES: 15, // Días personales totales por persona
   SHEET_NAME_DATOS: 'Datos KoboToolbox',
   SHEET_NAME_RESUMEN: 'Resumen',
@@ -30,7 +32,38 @@ const CONFIG = {
     'Centro de cuidado infantil',
     'Administración',
     'Inclusión Laboral'
-  ]
+  ],
+
+  // Correos de empleados (nombre completo → correo)
+  CORREOS_EMPLEADOS: {
+    'Laura Alejandra Castañeda Leal':             'alejandra@creamosguatemala.org',
+    'Eva Priscila López Xaper':                   'eva@creamosguatemala.org',
+    'Paola Lisbeth Ortiz Ramírez':                'paola@creamosguatemala.org',
+    'Sindy Lucero Sánchez Barrientos':            'sindy@creamosguatemala.org',
+    'Jacqueline Paola Tello':                     'jacqueline@creamosguatemala.org',
+    'Bruna España Bernal':                        'bruna@creamosguatemala.org',
+    'Iris Melissa Payes Argueta':                 'melissa@creamosguatemala.org',
+    'Diana Michelle Pérez Vaides':                'diana@creamosguatemala.org',
+    'Estela Karina Oscal Pixtun':                 'karina@creamosguatemala.org',
+    'Gerber Josué Álvarez':                       'gerber@creamosguatemala.org',
+    'Alejandro Renato Valdéz Álvarez':            'renato@creamosguatemala.org',
+    'Yhenifer Yaneth Aguilar Rodríguez de Pérez': 'yhenifer@creamosguatemala.org',
+    'Maritza Carolina Pérez López':               'maritza@creamosguatemala.org',
+    'Juan Josué Alvarado Caxaj':                  'josue@creamosguatemala.org',
+    'Stephany Tatiana Fuentes Rodríguez':         'stephany@creamosguatemala.org',
+    'Jansel Abel Ojeda Posadas':                  'jansel@creamosguatemala.org',
+    'Irma Jeaneth García':                        'irma@creamosguatemala.org',
+    'Eustolia Beatriz González Gómez':            'beatriz@creamosguatemala.org',
+    'Eneko Arberas García':                       'eneko@creamosguatemala.org',
+    'Gedaias Alexander Ajú Suquén':               'alexander@creamosguatemala.org',
+    'Adrián Antonio Torres Flores':               'adrian@creamosguatemala.org',
+    'Sebastian Stephen Villegas Strange':         'sebastian@creamosguatemala.org',
+    'Carmen Rossana Boche Noriega':               'rossana@creamosguatemala.org',
+    'Mildred Alejandra Molina Valiente':          'mildred@creamosguatemala.org',
+    'Abraham Jose David Marcos Bámaca Nij':       'abraham@creamosguatemala.org',
+    'Yenifer Pamela Mejía de la Cruz':            'pamela@creamosguatemala.org',
+    'Carmen Lucía Carías González de Zacher':     'carmen@creamosguatemala.org'
+  }
 };
 
 // ============================================================================
@@ -862,6 +895,37 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
 
     Logger.log('Notificación enviada al administrador: ' + correoAdmin);
 
+    // Enviar confirmación a cada empleado cuya solicitud fue procesada
+    registrosNuevos.forEach(function(reg) {
+      const nombreEmpleado = (reg[colNombre] || '').toString().trim();
+      const correoEmpleado = CONFIG.CORREOS_EMPLEADOS[nombreEmpleado];
+      if (!correoEmpleado) {
+        Logger.log('No se encontró correo para: ' + nombreEmpleado);
+        return;
+      }
+      try {
+        const fechaInicio = reg[colFechaInicio] || 'No especificada';
+        const fechaFin    = reg[colFechaFin]    || 'No especificada';
+        const cuerpoEmp =
+          '<p>Hola <strong>' + nombreEmpleado + '</strong>,</p>' +
+          '<p>Tu solicitud de días personales ha sido registrada correctamente:</p>' +
+          '<ul>' +
+          '<li><strong>Fecha inicio:</strong> ' + fechaInicio + '</li>' +
+          '<li><strong>Fecha fin:</strong> '    + fechaFin    + '</li>' +
+          '</ul>' +
+          '<p>Para consultas, responde este correo o contacta a tu director.</p>' +
+          '<p style="color:#888;font-size:12px;">Correo generado automáticamente — Sistema de Gestión de Días Personales, Creamos Guatemala.</p>';
+        MailApp.sendEmail({
+          to: correoEmpleado,
+          subject: 'Confirmación de solicitud de días personales',
+          htmlBody: cuerpoEmp
+        });
+        Logger.log('Confirmación enviada a empleado: ' + correoEmpleado);
+      } catch (errEmp) {
+        Logger.log('Error enviando correo a ' + nombreEmpleado + ': ' + errEmp.message);
+      }
+    });
+
   } catch (error) {
     Logger.log('Error en enviarNotificacionNuevoRegistro: ' + error.message);
   }
@@ -1082,9 +1146,13 @@ function crearHojaConfiguracion() {
     sheet = ss.insertSheet(CONFIG.SHEET_NAME_CONFIG);
   }
 
-  // Preservar valores que el usuario ya haya ingresado antes de limpiar
-  const tokenExistente = esNueva ? '' : leerConfigPorEtiqueta(sheet, 'Token KoboToolbox:', '');
-  const correoExistente = esNueva ? '' : leerConfigPorEtiqueta(sheet, 'Correo del administrador:', '');
+  // Preservar valores que el usuario ya haya ingresado; si es hoja nueva usar defaults
+  const tokenExistente = esNueva
+    ? CONFIG.KOBO_TOKEN_DEFAULT
+    : (leerConfigPorEtiqueta(sheet, 'Token KoboToolbox:', '') || CONFIG.KOBO_TOKEN_DEFAULT);
+  const correoExistente = esNueva
+    ? CONFIG.ADMIN_EMAIL_DEFAULT
+    : (leerConfigPorEtiqueta(sheet, 'Correo del administrador:', '') || CONFIG.ADMIN_EMAIL_DEFAULT);
   const urlExistente = esNueva ? CONFIG.KOBO_API_URL : leerConfigPorEtiqueta(sheet, 'URL API KoboToolbox:', CONFIG.KOBO_API_URL);
   const diasExistentes = esNueva ? CONFIG.DIAS_TOTALES : leerConfigPorEtiqueta(sheet, 'Días personales totales:', CONFIG.DIAS_TOTALES);
   const correosActivoExistente = esNueva ? false : leerConfigPorEtiqueta(sheet, 'Enviar correos (TRUE/FALSE):', false);
