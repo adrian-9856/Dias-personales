@@ -338,7 +338,7 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
     // Identificar columnas relevantes del formulario
     const idIndex = encontrarColumna(headers, ['_id', '_uuid', 'uuid', 'submission_id', 'id']);
-    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo']);
+    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo', '_submitted_by', 'submitted_by', 'username']);
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
@@ -392,7 +392,7 @@ function procesarDatos(datosCSV) {
     escribirDatosKobo(datosCSV);
 
     // Identificar columnas con valor por defecto -1 para detectar columnas no encontradas
-    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo']);
+    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo', '_submitted_by', 'submitted_by', 'username']);
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
@@ -611,8 +611,8 @@ function encontrarColumna(headers, palabrasClave) {
       }
     }
   }
-  Logger.log('Columna no encontrada para: ' + palabrasClave.join(', ') + '. Usando columna 0 como fallback.');
-  return 0;
+  Logger.log('Columna no encontrada para: ' + palabrasClave.join(', ') + '. Retornando -1 (no disponible).');
+  return -1;
 }
 
 /**
@@ -912,7 +912,7 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
     }
 
     // Identificar columnas para construir el correo con datos reales
-    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo']);
+    const colNombre = encontrarColumna(headers, ['nombre', 'name', 'empleado', 'employee', 'nombre_completo', '_submitted_by', 'submitted_by', 'username']);
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
