@@ -87,6 +87,51 @@ const CONFIG = {
 // ============================================================================
 
 /**
+ * WEBHOOK — KoboToolbox llama esta URL cada vez que alguien llena el formulario.
+ *
+ * Pasos para activarlo:
+ *  1. En Apps Script: Implementar > Nueva implementación > Aplicación web
+ *     - Ejecutar como: Yo (tu cuenta)
+ *     - Quién tiene acceso: Cualquier persona
+ *  2. Copia la URL que aparece (termina en /exec)
+ *  3. En KoboToolbox: tu formulario > Configuración > REST Services > + Nuevo
+ *     - Nombre: Google Sheets Días Personales
+ *     - URL: [pega la URL del paso 2]
+ *     - Método: POST
+ *     - Guardar
+ *
+ * Cada nueva respuesta del formulario dispara este webhook en ~5 segundos.
+ */
+function doPost(e) {
+  try {
+    Logger.log('Webhook recibido desde KoboToolbox — procesando...');
+    ejecutarSistema();
+    Logger.log('Webhook procesado correctamente');
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ok', procesado: new Date().toISOString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    Logger.log('Error en webhook doPost: ' + error.message);
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', mensaje: error.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Verificación del webhook — abre la URL en el navegador para confirmar que está activo.
+ */
+function doGet(e) {
+  return ContentService
+    .createTextOutput(JSON.stringify({
+      status: 'ok',
+      mensaje: 'Webhook de Días Personales activo',
+      timestamp: new Date().toISOString()
+    }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
  * Función principal que ejecuta todo el proceso
  */
 function ejecutarSistema() {
