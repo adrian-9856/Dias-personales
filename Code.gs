@@ -400,10 +400,15 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
       const fechaIni = colFechaInicio >= 0 ? (registro[colFechaInicio] || '') : '';
       const fechaFi  = colFechaFin    >= 0 ? (registro[colFechaFin]    || '') : '';
-      let diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
-      if (diasSolicitados === 0 && fechaIni !== '' && colDiasSolicitados >= 0) {
+      // Prioridad: campo "Día personal solicitado" (lo que escribió el empleado)
+      // Respaldo: calcular por diferencia de fechas si el campo está vacío o es 0
+      let diasSolicitados = 0;
+      if (colDiasSolicitados >= 0) {
         const valDias = parseInt((registro[colDiasSolicitados] || '0').toString().trim(), 10);
         if (valDias > 0) diasSolicitados = valDias;
+      }
+      if (diasSolicitados === 0) {
+        diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
       }
 
       return [
@@ -483,10 +488,15 @@ function procesarDatos(datosCSV) {
       const conoceReglamento    = (colReglamento     >= 0 ? (fila[colReglamento]     || 'No especificado') : 'No especificado').toString().trim();
       const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
-      let diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
-      if (diasSolicitados === 0 && fechaInicio !== '' && colDiasSolicitados >= 0) {
+      // Prioridad: campo "Día personal solicitado" (lo que escribió el empleado)
+      // Respaldo: calcular por diferencia de fechas si el campo está vacío o es 0
+      let diasSolicitados = 0;
+      if (colDiasSolicitados >= 0) {
         const valDias = parseInt((fila[colDiasSolicitados] || '0').toString().trim(), 10);
         if (valDias > 0) diasSolicitados = valDias;
+      }
+      if (diasSolicitados === 0) {
+        diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
       }
 
       // Si el empleado no está en la plantilla, agregarlo igualmente
