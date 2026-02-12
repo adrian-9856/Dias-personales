@@ -1822,11 +1822,13 @@ function instalarTodo() {
     toast('Paso 1/6 — Preparando hojas...');
 
     // ── 1. Crear hoja temporal si todas las hojas son del sistema ────────────
-    const hojasDelSistema = [
+    // El Historial NO se borra para evitar reenviar correos de solicitudes antiguas
+    const hojasABorrar = [
       CONFIG.SHEET_NAME_CONFIG, CONFIG.SHEET_NAME_DIRECTORES,
       CONFIG.SHEET_NAME_PLANTILLA, CONFIG.SHEET_NAME_DATOS,
-      CONFIG.SHEET_NAME_RESUMEN,  CONFIG.SHEET_NAME_HISTORIAL
+      CONFIG.SHEET_NAME_RESUMEN
     ];
+    const hojasDelSistema = hojasABorrar.concat([CONFIG.SHEET_NAME_HISTORIAL]);
     const todasLasHojas = ss.getSheets();
     const hojasExternas = todasLasHojas.filter(function(h) {
       return hojasDelSistema.indexOf(h.getName()) === -1;
@@ -1836,8 +1838,8 @@ function instalarTodo() {
       hojaTemporal = ss.insertSheet('_temporal_');
     }
 
-    // Eliminar hojas del sistema para empezar limpio
-    hojasDelSistema.forEach(function(nombre) {
+    // Eliminar hojas del sistema para empezar limpio (excepto Historial)
+    hojasABorrar.forEach(function(nombre) {
       const hoja = ss.getSheetByName(nombre);
       if (hoja) ss.deleteSheet(hoja);
     });
@@ -1922,9 +1924,9 @@ function reinstalarSistema() {
     '  • ' + CONFIG.SHEET_NAME_CONFIG + '\n' +
     '  • ' + CONFIG.SHEET_NAME_DIRECTORES + '\n' +
     '  • ' + CONFIG.SHEET_NAME_DATOS + '\n' +
-    '  • ' + CONFIG.SHEET_NAME_RESUMEN + '\n' +
-    '  • ' + CONFIG.SHEET_NAME_HISTORIAL + '\n\n' +
-    '⚠ ATENCIÓN: Se perderán todos los datos históricos y la configuración actual.\n\n' +
+    '  • ' + CONFIG.SHEET_NAME_RESUMEN + '\n\n' +
+    '✅ El Historial de correos enviados se conservará para no reenviar notificaciones.\n\n' +
+    '¿Deseas continuar?',
     '¿Deseas continuar?',
     ui.ButtonSet.YES_NO
   );
@@ -1937,14 +1939,13 @@ function reinstalarSistema() {
   const ss2 = SpreadsheetApp.getActiveSpreadsheet();
 
   try {
-    // ── PASO 1: Eliminar hojas del sistema ────────────────────────────────────
+    // ── PASO 1: Eliminar hojas del sistema (excepto Historial para no reenviar correos) ────
     const hojasASistema = [
       CONFIG.SHEET_NAME_CONFIG,
       CONFIG.SHEET_NAME_DIRECTORES,
       CONFIG.SHEET_NAME_PLANTILLA,
       CONFIG.SHEET_NAME_DATOS,
-      CONFIG.SHEET_NAME_RESUMEN,
-      CONFIG.SHEET_NAME_HISTORIAL
+      CONFIG.SHEET_NAME_RESUMEN
     ];
 
     // Asegurarse de que quede al menos una hoja activa en el spreadsheet
@@ -1985,8 +1986,8 @@ function reinstalarSistema() {
     crearHojaDirectores();
     crearHojaPlantillaEmpleados();
 
-    // ── PASO 5: Crear hojas vacías para Datos, Resumen e Historial ───────────
-    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
+    // ── PASO 5: Crear hojas vacías para Datos y Resumen (Historial se conserva) ─────────
+    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN].forEach(function(nombre) {
       if (!ss2.getSheetByName(nombre)) {
         ss2.insertSheet(nombre);
         Logger.log('Hoja creada vacía: ' + nombre);
