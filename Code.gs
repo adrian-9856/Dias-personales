@@ -102,32 +102,30 @@ function ejecutarSistema() {
     // 2. Detectar y procesar solo registros nuevos
     const registrosNuevos = detectarRegistrosNuevos(datosKobo);
 
+    Logger.log('Registros nuevos detectados: ' + registrosNuevos.length);
+
+    // 3. Procesar TODOS los datos (incluyendo históricos) → siempre actualiza el Resumen
+    const datosProcessados = procesarDatos(datosKobo);
+
+    // 4. Generar resumen y escribirlo siempre (independiente de si hay nuevos registros)
+    const resumen = generarResumen(datosProcessados);
+    escribirResumen(resumen);
+
     if (registrosNuevos.length === 0) {
-      Logger.log('No hay registros nuevos para procesar');
-      SpreadsheetApp.getActiveSpreadsheet().toast('No hay registros nuevos', 'Info', 3);
+      Logger.log('No hay registros nuevos — Resumen actualizado sin cambios en historial');
+      SpreadsheetApp.getActiveSpreadsheet().toast('Resumen actualizado (sin registros nuevos)', 'Info', 4);
       return;
     }
 
-    Logger.log('Encontrados ' + registrosNuevos.length + ' registros nuevos');
-
-    // 3. Procesar todos los datos (incluyendo históricos)
-    const datosProcessados = procesarDatos(datosKobo);
-
-    // 4. Agregar nuevos registros al historial
+    // 5. Agregar al historial solo los registros nuevos
     agregarAlHistorial(registrosNuevos, datosKobo[0]);
 
-    // 5. Generar resumen
-    const resumen = generarResumen(datosProcessados);
-
-    // 6. Escribir resumen en hoja
-    escribirResumen(resumen);
-
-    // 7. Enviar correos solo para los nuevos registros (si está activado)
+    // 6. Enviar correos solo para los nuevos registros (si está activado)
     enviarNotificacionNuevoRegistro(registrosNuevos, datosKobo[0]);
 
     Logger.log('Sistema ejecutado exitosamente');
     SpreadsheetApp.getActiveSpreadsheet().toast(
-      registrosNuevos.length + ' nuevo(s) registro(s) procesado(s)',
+      registrosNuevos.length + ' nuevo(s) registro(s) procesado(s) — Resumen actualizado',
       'Éxito',
       5
     );
@@ -181,7 +179,7 @@ function obtenerDatosKoboToolbox() {
   try {
     Logger.log('Obteniendo datos de KoboToolbox...');
 
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+    let sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
 
     // Si no existe la hoja de Configuración, crearla automáticamente con los defaults
     if (!sheet) {
