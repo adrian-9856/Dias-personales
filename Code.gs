@@ -1241,10 +1241,14 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       const fechaInicio    = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
       const fechaFin       = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
 
-      let diasEstaSolicitud = calcularDiasEntreFechas(fechaInicio, fechaFin);
-      if (diasEstaSolicitud === 0 && fechaInicio !== 'No especificada' && colDiasSolicitados >= 0) {
+      // Prioridad: campo "Día personal solicitado"; respaldo: cálculo por fechas
+      let diasEstaSolicitud = 0;
+      if (colDiasSolicitados >= 0) {
         const v = parseInt((reg[colDiasSolicitados] || '0').toString().trim(), 10);
         if (v > 0) diasEstaSolicitud = v;
+      }
+      if (diasEstaSolicitud === 0) {
+        diasEstaSolicitud = calcularDiasEntreFechas(fechaInicio, fechaFin);
       }
 
       const saldo        = saldoMap[nombreEmpleado] || null;
@@ -1649,7 +1653,7 @@ function crearHojaConfiguracion() {
     ['4. Escribe TRUE en "Enviar correos" para activar notificaciones por correo', ''],
     ['5. (*) Ingresa tu correo en "Correo del administrador" para recibir notificaciones', ''],
     ['6. Menú > "Configurar Directores" para asignar directores a cada equipo', ''],
-    ['7. Menú > "Configurar Trigger Automático" para ejecutar el sistema cada 15 minutos', ''],
+    ['7. Menú > "Configurar Trigger Automático" para ejecutar el sistema cada 1 minuto', ''],
     ['', ''],
     ['NOTA: Las celdas amarillas son obligatorias para que el sistema funcione.', '']
   ];
@@ -1842,9 +1846,9 @@ function reinstalarSistema() {
     // ── PASO 7: Configurar trigger automático ─────────────────────────────────
     ScriptApp.newTrigger('ejecutarAutomatico')
       .timeBased()
-      .everyMinutes(15)
+      .everyMinutes(1)
       .create();
-    Logger.log('Trigger automático configurado (cada 15 minutos)');
+    Logger.log('Trigger automático configurado (cada 1 minuto)');
 
     // ── PASO 8: Activar hoja de Configuración para que el usuario la vea ─────
     const hojaConfig = ss2.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
@@ -1862,7 +1866,7 @@ function reinstalarSistema() {
       '2. En la hoja "Directores":\n' +
       '   → Completa el nombre y correo de cada director\n\n' +
       '3. Cuando termines, ve al menú > "▶ Actualizar Datos Manualmente" para probar.\n\n' +
-      'El trigger automático ya está activo (cada 15 minutos).',
+      'El trigger automático ya está activo (cada 1 minuto).',
       ui.ButtonSet.OK
     );
 
@@ -1879,14 +1883,14 @@ function reinstalarSistema() {
 }
 
 /**
- * Configura el trigger automático para ejecutar el sistema cada 15 minutos
+ * Configura el trigger automático para ejecutar el sistema cada 1 minuto
  */
 function configurarTriggerAutomatico() {
   const ui = SpreadsheetApp.getUi();
 
   const respuesta = ui.alert(
     'Configurar Ejecución Automática',
-    '¿Deseas que el sistema verifique nuevos registros automáticamente cada 15 minutos?\n\n' +
+    '¿Deseas que el sistema verifique nuevos registros automáticamente cada 1 minuto?\n\n' +
     'Esto permitirá detectar y procesar nuevas solicitudes de días personales en tiempo real.',
     ui.ButtonSet.YES_NO
   );
@@ -1900,15 +1904,15 @@ function configurarTriggerAutomatico() {
       }
     });
 
-    // Crear nuevo trigger cada 15 minutos
+    // Crear nuevo trigger cada 1 minuto
     ScriptApp.newTrigger('ejecutarAutomatico')
       .timeBased()
-      .everyMinutes(15)
+      .everyMinutes(1)
       .create();
 
     ui.alert(
       'Trigger Configurado',
-      'El sistema verificará nuevos registros cada 15 minutos automáticamente.\n\n' +
+      'El sistema verificará nuevos registros cada 1 minuto automáticamente.\n\n' +
       'Puedes ver y gestionar los triggers en: Extensiones > Apps Script > Triggers (ícono del reloj)',
       ui.ButtonSet.OK
     );
@@ -1944,7 +1948,7 @@ function mostrarAyuda() {
     '<li>Menú > <strong>Crear/Actualizar Configuración</strong> (crea la hoja con los campos a completar)</li>' +
     '<li>En la hoja "Configuración": ingresa el <strong>token de KoboToolbox en B3</strong> y tu <strong>correo en B7</strong></li>' +
     '<li>Menú > <strong>Configurar Directores</strong> y completa nombres y correos de directores</li>' +
-    '<li>Menú > <strong>Configurar Trigger Automático</strong> para activar la ejecución cada 15 minutos</li>' +
+    '<li>Menú > <strong>Configurar Trigger Automático</strong> para activar la ejecución cada 1 minuto</li>' +
     '</ol>' +
 
     '<h3>Estructura de la Hoja de Configuración</h3>' +
@@ -1960,7 +1964,7 @@ function mostrarAyuda() {
     '<ul>' +
     '<li>Detección automática de registros nuevos (no reprocesa los ya vistos)</li>' +
     '<li>Cálculo de días entre fechas de inicio y fin</li>' +
-    '<li>Ejecución automática cada 15 minutos</li>' +
+    '<li>Ejecución automática cada 1 minuto</li>' +
     '<li>Notificación al administrador cuando llegan nuevas solicitudes</li>' +
     '<li>Reporte completo a directores de cada equipo</li>' +
     '<li>Historial de todas las solicitudes procesadas</li>' +
