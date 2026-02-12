@@ -747,15 +747,6 @@ function crearHojaPlantillaEmpleados() {
     sheet = ss.insertSheet(CONFIG.SHEET_NAME_PLANTILLA);
   }
 
-  // Preservar datos actuales si ya existen
-  var datosActuales = {};
-  if (sheet.getLastRow() > 2) {
-    var filas = sheet.getRange(3, 1, sheet.getLastRow() - 2, 3).getValues();
-    filas.forEach(function(f) {
-      if (f[0]) datosActuales[f[0].toString().trim()] = { equipo: f[1] || '', correo: f[2] || '' };
-    });
-  }
-
   sheet.clear();
 
   sheet.getRange('A1').setValue('PLANTILLA DE EMPLEADOS')
@@ -813,15 +804,7 @@ function crearHojaPlantillaEmpleados() {
     ['Carmen Lucía Carías González de Zacher',     'Administración',            'carmen@creamosguatemala.org']
   ];
 
-  // Aplicar datos guardados (si el usuario ya editó la hoja)
-  var filasDatos = empleadosConocidos.map(function(emp) {
-    var guardado = datosActuales[emp[0]];
-    return [
-      emp[0],
-      guardado ? (guardado.equipo || emp[1]) : emp[1],
-      guardado ? (guardado.correo || emp[2]) : emp[2]
-    ];
-  });
+  var filasDatos = empleadosConocidos;
 
   sheet.getRange(4, 1, filasDatos.length, 3).setValues(filasDatos);
 
