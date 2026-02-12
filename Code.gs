@@ -56,32 +56,41 @@ const CONFIG = {
 
   // Correos de empleados (nombre completo → correo)
   CORREOS_EMPLEADOS: {
-    'Laura Alejandra Castañeda Leal':             'alejandra@creamosguatemala.org',
-    'Eva Priscila López Xaper':                   'eva@creamosguatemala.org',
-    'Paola Lisbeth Ortiz Ramírez':                'paola@creamosguatemala.org',
-    'Sindy Lucero Sánchez Barrientos':            'sindy@creamosguatemala.org',
-    'Jacqueline Paola Tello':                     'jacqueline@creamosguatemala.org',
-    'Bruna España Bernal':                        'bruna@creamosguatemala.org',
-    'Iris Melissa Payes Argueta':                 'melissa@creamosguatemala.org',
-    'Diana Michelle Pérez Vaides':                'diana@creamosguatemala.org',
-    'Estela Karina Oscal Pixtun':                 'karina@creamosguatemala.org',
-    'Gerber Josué Álvarez':                       'gerber@creamosguatemala.org',
-    'Alejandro Renato Valdéz Álvarez':            'renato@creamosguatemala.org',
-    'Yhenifer Yaneth Aguilar Rodríguez de Pérez': 'yhenifer@creamosguatemala.org',
-    'Maritza Carolina Pérez López':               'maritza@creamosguatemala.org',
-    'Juan Josué Alvarado Caxaj':                  'josue@creamosguatemala.org',
-    'Stephany Tatiana Fuentes Rodríguez':         'stephany@creamosguatemala.org',
-    'Jansel Abel Ojeda Posadas':                  'jansel@creamosguatemala.org',
-    'Irma Jeaneth García':                        'irma@creamosguatemala.org',
-    'Eustolia Beatriz González Gómez':            'beatriz@creamosguatemala.org',
+    // Gestión de Impacto
     'Eneko Arberas García':                       'eneko@creamosguatemala.org',
     'Gedaias Alexander Ajú Suquén':               'alexander@creamosguatemala.org',
     'Adrián Antonio Torres Flores':               'adrian@creamosguatemala.org',
     'Sebastian Stephen Villegas Strange':         'sebastian@creamosguatemala.org',
+    // Apoyo emocional
+    'Iris Melissa Payes Argueta':                 'melissa@creamosguatemala.org',
+    'Diana Michelle Pérez Vaides':                'diana@creamosguatemala.org',
+    'Gerber Josué Álvarez':                       'gerber@creamosguatemala.org',
+    'Estela Karina Oscal Pixtun':                 'karina@creamosguatemala.org',
+    // Operaciones
+    'Alejandro Renato Valdéz Álvarez':            'renato@creamosguatemala.org',
+    'Maritza Carolina Pérez López':               'maritza@creamosguatemala.org',
+    'Yhenifer Yaneth Aguilar Rodríguez de Pérez': 'yhenifer@creamosguatemala.org',
+    'Juan Josué Alvarado Caxaj':                  'josue@creamosguatemala.org',
+    // mi-eelo
+    'Stephany Tatiana Fuentes Rodríguez':         'stephany@creamosguatemala.org',
+    'Jansel Abel Ojeda Posadas':                  'jansel@creamosguatemala.org',
+    'Eustolia Beatriz González Gómez':            'beatriz@creamosguatemala.org',
+    'Irma Jeaneth García':                        'irma@creamosguatemala.org',
+    // Educación
     'Carmen Rossana Boche Noriega':               'rossana@creamosguatemala.org',
     'Mildred Alejandra Molina Valiente':          'mildred@creamosguatemala.org',
-    'Abraham Jose David Marcos Bámaca Nij':       'abraham@creamosguatemala.org',
     'Yenifer Pamela Mejía de la Cruz':            'pamela@creamosguatemala.org',
+    'Liliana Román':                              'lily@creamosguatemala.org',
+    'Abraham Jose David Marcos Bámaca Nij':       'abraham@creamosguatemala.org',
+    // Inclusión Laboral
+    'Laura Alejandra Castañeda Leal':             'alejandra@creamosguatemala.org',
+    'Eva Priscila López Xaper':                   'eva@creamosguatemala.org',
+    'Sindy Lucero Sánchez Barrientos':            'sindy@creamosguatemala.org',
+    'Paola Lisbeth Ortiz Ramírez':                'paola@creamosguatemala.org',
+    // Centro de cuidado infantil
+    'Jacqueline Paola Tello':                     'jacqueline@creamosguatemala.org',
+    'Bruna España Bernal':                        'bruna@creamosguatemala.org',
+    // Administración
     'Carmen Lucía Carías González de Zacher':     'carmen@creamosguatemala.org'
   }
 };
@@ -774,23 +783,23 @@ function crearHojaPlantillaEmpleados() {
     // Apoyo emocional (4)
     ['Iris Melissa Payes Argueta',                 'Apoyo emocional',           'melissa@creamosguatemala.org'],
     ['Diana Michelle Pérez Vaides',                'Apoyo emocional',           'diana@creamosguatemala.org'],
-    ['Jacqueline Paola Tello',                     'Apoyo emocional',           'jacqueline@creamosguatemala.org'],
-    ['Bruna España Bernal',                        'Apoyo emocional',           'bruna@creamosguatemala.org'],
+    ['Gerber Josué Álvarez',                       'Apoyo emocional',           'gerber@creamosguatemala.org'],
+    ['Estela Karina Oscal Pixtun',                 'Apoyo emocional',           'karina@creamosguatemala.org'],
     // Operaciones (4)
     ['Alejandro Renato Valdéz Álvarez',            'Operaciones',               'renato@creamosguatemala.org'],
     ['Maritza Carolina Pérez López',               'Operaciones',               'maritza@creamosguatemala.org'],
     ['Yhenifer Yaneth Aguilar Rodríguez de Pérez', 'Operaciones',               'yhenifer@creamosguatemala.org'],
-    ['Gerber Josué Álvarez',                       'Operaciones',               'gerber@creamosguatemala.org'],
+    ['Juan Josué Alvarado Caxaj',                  'Operaciones',               'josue@creamosguatemala.org'],
     // mi-eelo (4)
     ['Stephany Tatiana Fuentes Rodríguez',         'mi-eelo',                   'stephany@creamosguatemala.org'],
     ['Jansel Abel Ojeda Posadas',                  'mi-eelo',                   'jansel@creamosguatemala.org'],
-    ['Juan Josué Alvarado Caxaj',                  'mi-eelo',                   'josue@creamosguatemala.org'],
-    ['Estela Karina Oscal Pixtun',                 'mi-eelo',                   'karina@creamosguatemala.org'],
+    ['Eustolia Beatriz González Gómez',            'mi-eelo',                   'beatriz@creamosguatemala.org'],
+    ['Irma Jeaneth García',                        'mi-eelo',                   'irma@creamosguatemala.org'],
     // Educación (5)
     ['Carmen Rossana Boche Noriega',               'Educación',                 'rossana@creamosguatemala.org'],
     ['Mildred Alejandra Molina Valiente',          'Educación',                 'mildred@creamosguatemala.org'],
-    ['Irma Jeaneth García',                        'Educación',                 'irma@creamosguatemala.org'],
-    ['Eustolia Beatriz González Gómez',            'Educación',                 'beatriz@creamosguatemala.org'],
+    ['Yenifer Pamela Mejía de la Cruz',            'Educación',                 'pamela@creamosguatemala.org'],
+    ['Liliana Román',                              'Educación',                 'lily@creamosguatemala.org'],
     ['Abraham Jose David Marcos Bámaca Nij',       'Educación',                 'abraham@creamosguatemala.org'],
     // Inclusión Laboral (4)
     ['Laura Alejandra Castañeda Leal',             'Inclusión Laboral',         'alejandra@creamosguatemala.org'],
@@ -798,10 +807,10 @@ function crearHojaPlantillaEmpleados() {
     ['Sindy Lucero Sánchez Barrientos',            'Inclusión Laboral',         'sindy@creamosguatemala.org'],
     ['Paola Lisbeth Ortiz Ramírez',                'Inclusión Laboral',         'paola@creamosguatemala.org'],
     // Centro de cuidado infantil (2)
-    ['Carmen Lucía Carías González de Zacher',     'Centro de cuidado infantil','carmen@creamosguatemala.org'],
-    ['Yenifer Pamela Mejía de la Cruz',            'Centro de cuidado infantil','pamela@creamosguatemala.org'],
+    ['Jacqueline Paola Tello',                     'Centro de cuidado infantil','jacqueline@creamosguatemala.org'],
+    ['Bruna España Bernal',                        'Centro de cuidado infantil','bruna@creamosguatemala.org'],
     // Administración (1)
-    ['Yenifer Pamela Mejía de la Cruz',            'Administración',            'pamela@creamosguatemala.org']
+    ['Carmen Lucía Carías González de Zacher',     'Administración',            'carmen@creamosguatemala.org']
   ];
 
   // Aplicar datos guardados (si el usuario ya editó la hoja)
