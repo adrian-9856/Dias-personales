@@ -1772,6 +1772,7 @@ function onOpen() {
       .addItem('🚀 Instalar Todo (1 clic)', 'instalarTodo')
       .addSeparator()
       .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
+      .addItem('🔄 Actualizar Lista de Empleados', 'actualizarEmpleados')
       .addSeparator()
       .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
       .addItem('👥 Configurar Directores', 'crearHojaDirectores')
@@ -1788,6 +1789,18 @@ function onOpen() {
     // No hay nada que hacer; el menú solo existe cuando se abre el Sheet.
     Logger.log('onOpen: sin contexto de UI (' + e.message + ')');
   }
+}
+
+/**
+ * Actualiza únicamente la lista de empleados (nombre, equipo, correo)
+ * sin tocar ninguna otra hoja ni configuración del sistema.
+ */
+function actualizarEmpleados() {
+  crearHojaPlantillaEmpleados();
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    '✅ Lista de empleados actualizada correctamente.',
+    'Actualizar Empleados', 5
+  );
 }
 
 /**
