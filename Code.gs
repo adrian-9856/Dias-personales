@@ -1729,6 +1729,8 @@ function onOpen() {
   try {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('Días Personales')
+      .addItem('🚀 Instalar Todo (1 clic)', 'instalarTodo')
+      .addSeparator()
       .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
       .addSeparator()
       .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
@@ -1745,6 +1747,106 @@ function onOpen() {
     // onOpen fue llamada fuera del contexto del spreadsheet (ej: editor de Apps Script).
     // No hay nada que hacer; el menú solo existe cuando se abre el Sheet.
     Logger.log('onOpen: sin contexto de UI (' + e.message + ')');
+  }
+}
+
+/**
+ * Instala y configura el sistema completo en un solo clic, sin ningún paso manual.
+ *
+ * Pasos que realiza automáticamente:
+ *   1. Recrea todas las hojas del sistema
+ *   2. Rellena el token de KoboToolbox y el correo de administrador desde CONFIG
+ *   3. Activa el envío de correos
+ *   4. Carga los directores y la plantilla de empleados
+ *   5. Configura el trigger automático (cada 1 minuto)
+ *   6. Ejecuta la primera sincronización de datos
+ */
+function instalarTodo() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const toast = function(msg) { ss.toast(msg, 'Instalación', 10); };
+
+  try {
+    toast('Paso 1/6 — Preparando hojas...');
+
+    // ── 1. Crear hoja temporal si todas las hojas son del sistema ────────────
+    const hojasDelSistema = [
+      CONFIG.SHEET_NAME_CONFIG, CONFIG.SHEET_NAME_DIRECTORES,
+      CONFIG.SHEET_NAME_PLANTILLA, CONFIG.SHEET_NAME_DATOS,
+      CONFIG.SHEET_NAME_RESUMEN,  CONFIG.SHEET_NAME_HISTORIAL
+    ];
+    const todasLasHojas = ss.getSheets();
+    const hojasExternas = todasLasHojas.filter(function(h) {
+      return hojasDelSistema.indexOf(h.getName()) === -1;
+    });
+    let hojaTemporal = null;
+    if (hojasExternas.length === 0) {
+      hojaTemporal = ss.insertSheet('_temporal_');
+    }
+
+    // Eliminar hojas del sistema para empezar limpio
+    hojasDelSistema.forEach(function(nombre) {
+      const hoja = ss.getSheetByName(nombre);
+      if (hoja) ss.deleteSheet(hoja);
+    });
+
+    // ── 2. Eliminar triggers anteriores ──────────────────────────────────────
+    ScriptApp.getProjectTriggers().forEach(function(t) {
+      if (t.getHandlerFunction() === 'ejecutarAutomatico') ScriptApp.deleteTrigger(t);
+    });
+
+    // ── 3. Crear hoja de Configuración y rellenar valores automáticamente ────
+    toast('Paso 2/6 — Creando configuración...');
+    crearHojaConfiguracion();
+
+    const sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+    if (sheetConfig) {
+      // Fila 3: Token KoboToolbox
+      sheetConfig.getRange('B3').setValue(CONFIG.KOBO_TOKEN_DEFAULT);
+      // Fila 6: Activar envío de correos
+      sheetConfig.getRange('B6').setValue('TRUE');
+      // Fila 7: Correo del administrador
+      sheetConfig.getRange('B7').setValue(CONFIG.ADMIN_EMAIL_DEFAULT);
+    }
+
+    // ── 4. Crear hojas de Directores y Plantilla de Empleados ────────────────
+    toast('Paso 3/6 — Configurando directores y empleados...');
+    crearHojaDirectores();
+    crearHojaPlantillaEmpleados();
+
+    // ── 5. Crear hojas vacías para Datos, Resumen e Historial ────────────────
+    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
+      if (!ss.getSheetByName(nombre)) ss.insertSheet(nombre);
+    });
+
+    // Eliminar hoja temporal si se creó
+    if (hojaTemporal) ss.deleteSheet(hojaTemporal);
+
+    // ── 6. Configurar trigger automático (cada 1 minuto) ─────────────────────
+    toast('Paso 4/6 — Activando trigger automático...');
+    ScriptApp.newTrigger('ejecutarAutomatico')
+      .timeBased()
+      .everyMinutes(1)
+      .create();
+
+    // ── 7. Primera sincronización de datos ───────────────────────────────────
+    toast('Paso 5/6 — Sincronizando datos con KoboToolbox...');
+    ejecutarSistema();
+
+    // ── 8. Activar la hoja Resumen para que el usuario la vea ────────────────
+    toast('Paso 6/6 — Listo.');
+    const hojaResumen = ss.getSheetByName(CONFIG.SHEET_NAME_RESUMEN);
+    if (hojaResumen) ss.setActiveSheet(hojaResumen);
+
+    Logger.log('instalarTodo completado exitosamente');
+    ss.toast('Sistema instalado y funcionando. El trigger revisa datos cada 1 minuto.', '✅ Instalación completa', 15);
+
+  } catch (error) {
+    Logger.log('Error en instalarTodo: ' + error.message);
+    SpreadsheetApp.getUi().alert(
+      'Error durante la instalación',
+      'Ocurrió un error: ' + error.message + '\n\nRevisa el log en Extensiones > Apps Script > Registros.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
   }
 }
 
