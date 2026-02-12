@@ -37,6 +37,7 @@ const CONFIG = {
   // Directores por equipo [nombre, correo]
   DIRECTORES_DEFAULT: {
     'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',        correo: 'melissa@creamosguatemala.org' },
+    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Argueta',        correo: 'melissa@creamosguatemala.org' },
     'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',   correo: 'renato@creamosguatemala.org' },
     'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',correo: 'stephany@creamosguatemala.org' },
     'Gestión de Impacto':        { nombre: 'Eneko Arberas García',              correo: 'eneko@creamosguatemala.org' },
