@@ -15,9 +15,13 @@ const CONFIG = {
   KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/esigRStULsbGhgCaayXsgHC/data.csv',
   KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
   ADMIN_EMAIL_DEFAULT: 'admin@creamosguatemala.org',
-  DIAS_TOTALES: 15,     // Días personales totales por persona al año
-  DIAS_SEMESTRE_1: 7,   // Días del Semestre 1 (Ene–Jun)
-  DIAS_SEMESTRE_2: 8,   // Días del Semestre 2 (Jul–Dic)
+  DIAS_TOTALES: 15,     // Días personales totales por persona al año (default)
+  DIAS_SEMESTRE_1: 7,   // Días del Semestre 1 (Ene–Jun) (default)
+  DIAS_SEMESTRE_2: 8,   // Días del Semestre 2 (Jul–Dic) (default)
+  // Equipos con días distintos al default (total, s1, s2)
+  DIAS_POR_EQUIPO: {
+    'Educación': { total: 7, s1: 3, s2: 4 }
+  },
   SHEET_NAME_DATOS: 'Datos KoboToolbox',
   SHEET_NAME_RESUMEN: 'Resumen',
   SHEET_NAME_CONFIG: 'Configuración',
@@ -147,10 +151,16 @@ function ejecutarSistema() {
       return;
     }
 
-    // 2. Detectar y procesar solo registros nuevos
+    // 2. Detectar si es la primera ejecución (historial vacío)
+    //    En ese caso se pobla el historial con los datos existentes pero NO se envían correos,
+    //    para evitar notificar sobre solicitudes que ya son antiguas.
+    const ss0 = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetHistorial0 = ss0.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
+    const primerEjecucion = !sheetHistorial0 || sheetHistorial0.getLastRow() <= 1;
+
     const registrosNuevos = detectarRegistrosNuevos(datosKobo);
 
-    Logger.log('Registros nuevos detectados: ' + registrosNuevos.length);
+    Logger.log('Registros nuevos detectados: ' + registrosNuevos.length + (primerEjecucion ? ' (primera ejecución — sin correos)' : ''));
 
     // 3. Procesar TODOS los datos (incluyendo históricos) → siempre actualiza el Resumen
     const datosProcessados = procesarDatos(datosKobo);
@@ -168,8 +178,10 @@ function ejecutarSistema() {
     // 5. Agregar al historial solo los registros nuevos
     agregarAlHistorial(registrosNuevos, datosKobo[0]);
 
-    // 6. Enviar correos solo para los nuevos registros (con saldos actualizados)
-    enviarNotificacionNuevoRegistro(registrosNuevos, datosKobo[0], datosProcessados);
+    // 6. Enviar correos solo para registros verdaderamente nuevos (no en la primera ejecución)
+    if (!primerEjecucion) {
+      enviarNotificacionNuevoRegistro(registrosNuevos, datosKobo[0], datosProcessados);
+    }
 
     Logger.log('Sistema ejecutado exitosamente');
     SpreadsheetApp.getActiveSpreadsheet().toast(
@@ -436,6 +448,21 @@ function agregarAlHistorial(registrosNuevos, headers) {
  * Incluye TODOS los empleados de la plantilla (aunque no hayan tomado días)
  * y separa los días por semestre (S1: Ene–Jun = 7 días, S2: Jul–Dic = 8 días).
  */
+
+/**
+ * Devuelve los días máximos (total, s1, s2) para un equipo dado.
+ * Si el equipo tiene una configuración especial en DIAS_POR_EQUIPO la usa;
+ * de lo contrario devuelve los valores globales de CONFIG.
+ */
+function getDiasEquipo(equipo) {
+  const equipoNorm = (equipo || '').toString().trim().toLowerCase();
+  const especial = Object.keys(CONFIG.DIAS_POR_EQUIPO).find(function(k) {
+    return k.toLowerCase() === equipoNorm;
+  });
+  if (especial) return CONFIG.DIAS_POR_EQUIPO[especial];
+  return { total: CONFIG.DIAS_TOTALES, s1: CONFIG.DIAS_SEMESTRE_1, s2: CONFIG.DIAS_SEMESTRE_2 };
+}
+
 function procesarDatos(datosCSV) {
   try {
     Logger.log('Procesando datos...');
@@ -541,6 +568,7 @@ function procesarDatos(datosCSV) {
     // Calcular totales y días restantes
     const datosProcessados = Array.from(empleadosMap.values()).map(function(emp) {
       const diasTomadosTotal = emp.diasTomadosS1 + emp.diasTomadosS2;
+      const maxDias = getDiasEquipo(emp.equipo);
       return {
         nombre:          emp.nombre,
         equipo:          emp.equipo,
@@ -550,10 +578,11 @@ function procesarDatos(datosCSV) {
         diasTomadosS1:   emp.diasTomadosS1,
         diasTomadosS2:   emp.diasTomadosS2,
         diasTomados:     diasTomadosTotal,
-        diasRestantesS1: Math.max(0, CONFIG.DIAS_SEMESTRE_1 - emp.diasTomadosS1),
-        diasRestantesS2: Math.max(0, CONFIG.DIAS_SEMESTRE_2 - emp.diasTomadosS2),
-        diasRestantes:   Math.max(0, CONFIG.DIAS_TOTALES - diasTomadosTotal),
-        porcentajeUsado: (diasTomadosTotal / CONFIG.DIAS_TOTALES * 100).toFixed(1),
+        diasRestantesS1: Math.max(0, maxDias.s1 - emp.diasTomadosS1),
+        diasRestantesS2: Math.max(0, maxDias.s2 - emp.diasTomadosS2),
+        diasRestantes:   Math.max(0, maxDias.total - diasTomadosTotal),
+        diasMaximos:     maxDias.total,
+        porcentajeUsado: (diasTomadosTotal / maxDias.total * 100).toFixed(1),
         solicitudes:     emp.solicitudes,
         totalSolicitudes: emp.solicitudes.length
       };
@@ -1304,12 +1333,13 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
  * Construye el HTML del correo al DIRECTOR con el detalle del empleado y resumen del equipo.
  */
 function construirCorreoDirector(nombre, equipo, fechaIni, fechaFin, diasSolicitud, saldo, companeros) {
+  var maxDias = getDiasEquipo(equipo);
   var s1Tom = saldo ? (saldo.diasTomadosS1 || 0) : 0;
-  var s1Res = saldo ? (saldo.diasRestantesS1 != null ? saldo.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1) : CONFIG.DIAS_SEMESTRE_1;
+  var s1Res = saldo ? (saldo.diasRestantesS1 != null ? saldo.diasRestantesS1 : maxDias.s1) : maxDias.s1;
   var s2Tom = saldo ? (saldo.diasTomadosS2 || 0) : 0;
-  var s2Res = saldo ? (saldo.diasRestantesS2 != null ? saldo.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2) : CONFIG.DIAS_SEMESTRE_2;
+  var s2Res = saldo ? (saldo.diasRestantesS2 != null ? saldo.diasRestantesS2 : maxDias.s2) : maxDias.s2;
   var totTom = saldo ? (saldo.diasTomados || 0) : diasSolicitud;
-  var totRes = saldo ? (saldo.diasRestantes != null ? saldo.diasRestantes : CONFIG.DIAS_TOTALES) : CONFIG.DIAS_TOTALES;
+  var totRes = saldo ? (saldo.diasRestantes != null ? saldo.diasRestantes : maxDias.total) : maxDias.total;
 
   // Tabla resumen del equipo
   var filasEquipo = companeros.map(function(p) {
@@ -1347,15 +1377,15 @@ function construirCorreoDirector(nombre, equipo, fechaIni, fechaFin, diasSolicit
     '<th style="padding:8px 12px;text-align:center;">Restantes</th>' +
     '</tr></thead><tbody>' +
     '<tr><td style="padding:6px 12px;">Semestre 1 (Ene–Jun)</td>' +
-    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_1 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + maxDias.s1 + '</td>' +
     '<td style="padding:6px 12px;text-align:center;">' + s1Tom + '</td>' +
     '<td style="padding:6px 12px;text-align:center;background:' + (s1Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s1Res + '</td></tr>' +
     '<tr style="background:#f5f5f5;"><td style="padding:6px 12px;">Semestre 2 (Jul–Dic)</td>' +
-    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_2 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + maxDias.s2 + '</td>' +
     '<td style="padding:6px 12px;text-align:center;">' + s2Tom + '</td>' +
     '<td style="padding:6px 12px;text-align:center;background:' + (s2Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s2Res + '</td></tr>' +
     '<tr style="font-weight:bold;border-top:2px solid #ddd;"><td style="padding:6px 12px;">Total anual</td>' +
-    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_TOTALES + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + maxDias.total + '</td>' +
     '<td style="padding:6px 12px;text-align:center;">' + totTom + '</td>' +
     '<td style="padding:6px 12px;text-align:center;background:' + (totRes < 3 ? '#f4c7c3' : (totRes < 7 ? '#fce8b2' : '#b7e1cd')) + ';">' + totRes + '</td></tr>' +
     '</tbody></table>' +
@@ -1383,12 +1413,13 @@ function construirCorreoDirector(nombre, equipo, fechaIni, fechaFin, diasSolicit
  * Construye el HTML del correo al EMPLEADO con su saldo por semestre.
  */
 function construirCorreoEmpleado(nombre, fechaIni, fechaFin, diasSolicitud, saldo) {
+  var maxDias = getDiasEquipo(saldo ? saldo.equipo : '');
   var s1Tom = saldo ? (saldo.diasTomadosS1 || 0) : 0;
-  var s1Res = saldo ? (saldo.diasRestantesS1 != null ? saldo.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1) : CONFIG.DIAS_SEMESTRE_1;
+  var s1Res = saldo ? (saldo.diasRestantesS1 != null ? saldo.diasRestantesS1 : maxDias.s1) : maxDias.s1;
   var s2Tom = saldo ? (saldo.diasTomadosS2 || 0) : 0;
-  var s2Res = saldo ? (saldo.diasRestantesS2 != null ? saldo.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2) : CONFIG.DIAS_SEMESTRE_2;
+  var s2Res = saldo ? (saldo.diasRestantesS2 != null ? saldo.diasRestantesS2 : maxDias.s2) : maxDias.s2;
   var totTom = saldo ? (saldo.diasTomados || 0) : diasSolicitud;
-  var totRes = saldo ? (saldo.diasRestantes != null ? saldo.diasRestantes : CONFIG.DIAS_TOTALES) : CONFIG.DIAS_TOTALES;
+  var totRes = saldo ? (saldo.diasRestantes != null ? saldo.diasRestantes : maxDias.total) : maxDias.total;
 
   return '<html><body style="font-family:Arial,sans-serif;color:#333;">' +
     '<div style="background:#4285f4;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">' +
@@ -1413,15 +1444,15 @@ function construirCorreoEmpleado(nombre, fechaIni, fechaFin, diasSolicitud, sald
     '<th style="padding:8px 12px;text-align:center;">Restantes</th>' +
     '</tr></thead><tbody>' +
     '<tr><td style="padding:6px 12px;">Semestre 1 (Ene–Jun)</td>' +
-    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_1 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + maxDias.s1 + '</td>' +
     '<td style="padding:6px 12px;text-align:center;">' + s1Tom + '</td>' +
     '<td style="padding:6px 12px;text-align:center;background:' + (s1Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s1Res + '</td></tr>' +
     '<tr style="background:#f5f5f5;"><td style="padding:6px 12px;">Semestre 2 (Jul–Dic)</td>' +
-    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_2 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + maxDias.s2 + '</td>' +
     '<td style="padding:6px 12px;text-align:center;">' + s2Tom + '</td>' +
     '<td style="padding:6px 12px;text-align:center;background:' + (s2Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s2Res + '</td></tr>' +
     '<tr style="font-weight:bold;border-top:2px solid #ddd;"><td style="padding:6px 12px;">Total anual</td>' +
-    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_TOTALES + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + maxDias.total + '</td>' +
     '<td style="padding:6px 12px;text-align:center;">' + totTom + '</td>' +
     '<td style="padding:6px 12px;text-align:center;background:' + (totRes < 3 ? '#f4c7c3' : (totRes < 7 ? '#fce8b2' : '#b7e1cd')) + ';">' + totRes + '</td></tr>' +
     '</tbody></table>' +
