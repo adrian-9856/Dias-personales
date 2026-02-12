@@ -15,12 +15,15 @@ const CONFIG = {
   KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/esigRStULsbGhgCaayXsgHC/data.csv',
   KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
   ADMIN_EMAIL_DEFAULT: 'admin@creamosguatemala.org',
-  DIAS_TOTALES: 15, // Días personales totales por persona
+  DIAS_TOTALES: 15,     // Días personales totales por persona al año
+  DIAS_SEMESTRE_1: 7,   // Días del Semestre 1 (Ene–Jun)
+  DIAS_SEMESTRE_2: 8,   // Días del Semestre 2 (Jul–Dic)
   SHEET_NAME_DATOS: 'Datos KoboToolbox',
   SHEET_NAME_RESUMEN: 'Resumen',
   SHEET_NAME_CONFIG: 'Configuración',
   SHEET_NAME_HISTORIAL: 'Historial de Solicitudes',
   SHEET_NAME_DIRECTORES: 'Directores',
+  SHEET_NAME_PLANTILLA: 'Plantilla de Empleados',
 
   // Equipos disponibles
   EQUIPOS: [
@@ -120,8 +123,8 @@ function ejecutarSistema() {
     // 5. Agregar al historial solo los registros nuevos
     agregarAlHistorial(registrosNuevos, datosKobo[0]);
 
-    // 6. Enviar correos solo para los nuevos registros (si está activado)
-    enviarNotificacionNuevoRegistro(registrosNuevos, datosKobo[0]);
+    // 6. Enviar correos solo para los nuevos registros (con saldos actualizados)
+    enviarNotificacionNuevoRegistro(registrosNuevos, datosKobo[0], datosProcessados);
 
     Logger.log('Sistema ejecutado exitosamente');
     SpreadsheetApp.getActiveSpreadsheet().toast(
@@ -379,7 +382,9 @@ function agregarAlHistorial(registrosNuevos, headers) {
 }
 
 /**
- * Procesa los datos CSV de KoboToolbox según la estructura real del formulario
+ * Procesa los datos CSV de KoboToolbox según la estructura real del formulario.
+ * Incluye TODOS los empleados de la plantilla (aunque no hayan tomado días)
+ * y separa los días por semestre (S1: Ene–Jun = 7 días, S2: Jul–Dic = 8 días).
  */
 function procesarDatos(datosCSV) {
   try {
@@ -389,96 +394,117 @@ function procesarDatos(datosCSV) {
       throw new Error('No hay datos para procesar');
     }
 
-    // Obtener encabezados
     const headers = datosCSV[0];
     const datos = datosCSV.slice(1);
 
-    // Escribir datos crudos en hoja
     escribirDatosKobo(datosCSV);
 
-    // Identificar columnas de equipo, fechas y consentimiento
-    const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
-    const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
-    const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
-    const colReglamento = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
-    const colConsentimiento = encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
-    // Fallback de días cuando no hay fecha fin (ej: "Día personal solicitado" = 1)
+    const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
+    const colFechaInicio   = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
+    const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
+    const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
+    const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
     const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
 
-    Logger.log('Columnas identificadas - Equipo:' + colEquipo +
-      ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin + ' DiasSolicitados:' + colDiasSolicitados);
+    Logger.log('Columnas - Equipo:' + colEquipo + ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin);
 
-    // Obtener mapeo de equipos a directores
     const mapeoDirectores = obtenerMapeoDirectores();
+    const plantilla       = obtenerPlantillaEmpleados();
 
-    // Agrupar solicitudes por empleado
+    // Inicializar mapa con TODOS los empleados de la plantilla (días en 0)
     const empleadosMap = new Map();
+    plantilla.forEach(function(emp) {
+      const infoDir = buscarDirectorPorEquipo(mapeoDirectores, emp.equipo) || { nombre: 'Sin asignar', correo: '' };
+      empleadosMap.set(emp.nombre, {
+        nombre:         emp.nombre,
+        equipo:         emp.equipo,
+        director:       infoDir.nombre,
+        correoDirector: infoDir.correo,
+        correoEmpleado: emp.correo || CONFIG.CORREOS_EMPLEADOS[emp.nombre] || '',
+        diasTomadosS1:  0,
+        diasTomadosS2:  0,
+        solicitudes:    []
+      });
+    });
 
+    // Acumular solicitudes del CSV
     datos.forEach(function(fila) {
-      if (!fila || fila.every(function(c) { return c === '' || c === null || c === undefined; })) {
-        return; // Saltar filas vacías
-      }
+      if (!fila || fila.every(function(c) { return c === '' || c === null || c === undefined; })) return;
 
-      // El nombre está dentro de la columna de su equipo (estructura del formulario KoboToolbox)
-      const nombre = extraerNombreDeFila(headers, fila) || 'Sin nombre';
-      const equipo = (colEquipo >= 0 ? (fila[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
-      const fechaInicio = (colFechaInicio >= 0 ? (fila[colFechaInicio] || '') : '').toString().trim();
-      const fechaFin = (colFechaFin >= 0 ? (fila[colFechaFin] || '') : '').toString().trim();
-      const conoceReglamento = (colReglamento >= 0 ? (fila[colReglamento] || 'No especificado') : 'No especificado').toString().trim();
+      const nombre        = extraerNombreDeFila(headers, fila) || 'Sin nombre';
+      const equipo        = (colEquipo >= 0 ? (fila[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
+      const fechaInicio   = (colFechaInicio >= 0 ? (fila[colFechaInicio] || '') : '').toString().trim();
+      const fechaFin      = (colFechaFin    >= 0 ? (fila[colFechaFin]    || '') : '').toString().trim();
+      const conoceReglamento    = (colReglamento     >= 0 ? (fila[colReglamento]     || 'No especificado') : 'No especificado').toString().trim();
       const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
-      // Director del mapeo por equipo con comparación normalizada (ignora tildes y typos)
-      const infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipo) || { nombre: 'Sin asignar', correo: '' };
-      const director = infoDirector.nombre;
-      const correoDirector = infoDirector.correo;
-
-      // Calcular días: si no hay fecha fin, usar el campo "Día personal solicitado"
       let diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
       if (diasSolicitados === 0 && fechaInicio !== '' && colDiasSolicitados >= 0) {
         const valDias = parseInt((fila[colDiasSolicitados] || '0').toString().trim(), 10);
         if (valDias > 0) diasSolicitados = valDias;
       }
 
-      // Agrupar por empleado
+      // Si el empleado no está en la plantilla, agregarlo igualmente
       if (!empleadosMap.has(nombre)) {
+        const infoDir = buscarDirectorPorEquipo(mapeoDirectores, equipo) || { nombre: 'Sin asignar', correo: '' };
         empleadosMap.set(nombre, {
-          nombre: nombre,
-          equipo: equipo,
-          director: director,
-          correoDirector: correoDirector,
-          diasTomados: 0,
-          solicitudes: []
+          nombre:         nombre,
+          equipo:         equipo,
+          director:       infoDir.nombre,
+          correoDirector: infoDir.correo,
+          correoEmpleado: CONFIG.CORREOS_EMPLEADOS[nombre] || '',
+          diasTomadosS1:  0,
+          diasTomadosS2:  0,
+          solicitudes:    []
         });
       }
 
-      const empleado = empleadosMap.get(nombre);
-      empleado.diasTomados += diasSolicitados;
-      empleado.solicitudes.push({
-        fechaInicio: fechaInicio,
-        fechaFin: fechaFin,
-        dias: diasSolicitados,
-        conoceReglamento: conoceReglamento,
+      const emp = empleadosMap.get(nombre);
+      const semestre = getSemestre(fechaInicio);
+      if (semestre === 1) {
+        emp.diasTomadosS1 += diasSolicitados;
+      } else {
+        emp.diasTomadosS2 += diasSolicitados;
+      }
+      // Si el CSV tiene el equipo real y la plantilla lo dejó vacío, actualizarlo
+      if (!emp.equipo || emp.equipo === '') {
+        emp.equipo = equipo;
+        const infoDir = buscarDirectorPorEquipo(mapeoDirectores, equipo) || { nombre: 'Sin asignar', correo: '' };
+        emp.director       = infoDir.nombre;
+        emp.correoDirector = infoDir.correo;
+      }
+      emp.solicitudes.push({
+        fechaInicio:         fechaInicio,
+        fechaFin:            fechaFin,
+        dias:                diasSolicitados,
+        semestre:            semestre,
+        conoceReglamento:    conoceReglamento,
         tieneConsentimiento: tieneConsentimiento
       });
     });
 
-    // Convertir a array y calcular días restantes
-    const datosProcessados = Array.from(empleadosMap.values()).map(function(empleado) {
-      const diasRestantes = CONFIG.DIAS_TOTALES - empleado.diasTomados;
+    // Calcular totales y días restantes
+    const datosProcessados = Array.from(empleadosMap.values()).map(function(emp) {
+      const diasTomadosTotal = emp.diasTomadosS1 + emp.diasTomadosS2;
       return {
-        nombre: empleado.nombre,
-        equipo: empleado.equipo,
-        director: empleado.director,
-        correoDirector: empleado.correoDirector,
-        diasTomados: empleado.diasTomados,
-        diasRestantes: diasRestantes,
-        porcentajeUsado: (empleado.diasTomados / CONFIG.DIAS_TOTALES * 100).toFixed(1),
-        solicitudes: empleado.solicitudes,
-        totalSolicitudes: empleado.solicitudes.length
+        nombre:          emp.nombre,
+        equipo:          emp.equipo,
+        director:        emp.director,
+        correoDirector:  emp.correoDirector,
+        correoEmpleado:  emp.correoEmpleado,
+        diasTomadosS1:   emp.diasTomadosS1,
+        diasTomadosS2:   emp.diasTomadosS2,
+        diasTomados:     diasTomadosTotal,
+        diasRestantesS1: Math.max(0, CONFIG.DIAS_SEMESTRE_1 - emp.diasTomadosS1),
+        diasRestantesS2: Math.max(0, CONFIG.DIAS_SEMESTRE_2 - emp.diasTomadosS2),
+        diasRestantes:   Math.max(0, CONFIG.DIAS_TOTALES - diasTomadosTotal),
+        porcentajeUsado: (diasTomadosTotal / CONFIG.DIAS_TOTALES * 100).toFixed(1),
+        solicitudes:     emp.solicitudes,
+        totalSolicitudes: emp.solicitudes.length
       };
     });
 
-    Logger.log('Datos procesados: ' + datosProcessados.length + ' empleados');
+    Logger.log('Datos procesados: ' + datosProcessados.length + ' empleados (plantilla completa)');
     return datosProcessados;
 
   } catch (error) {
@@ -604,6 +630,159 @@ function obtenerMapeoDirectores() {
   } catch (error) {
     Logger.log('Error en obtenerMapeoDirectores: ' + error.message);
     return {};
+  }
+}
+
+/**
+ * Devuelve 1 (Ene–Jun) o 2 (Jul–Dic) según la fecha de inicio
+ */
+function getSemestre(fechaStr) {
+  if (!fechaStr || fechaStr.toString().trim() === '') return 1;
+  var d = new Date(fechaStr);
+  if (isNaN(d.getTime())) return 1;
+  return d.getMonth() < 6 ? 1 : 2;
+}
+
+/**
+ * Crea/actualiza la hoja "Plantilla de Empleados" con la nómina completa.
+ * El usuario puede editar equipos y correos directamente en esa hoja.
+ */
+function crearHojaPlantillaEmpleados() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEET_NAME_PLANTILLA);
+  }
+
+  // Preservar datos actuales si ya existen
+  var datosActuales = {};
+  if (sheet.getLastRow() > 2) {
+    var filas = sheet.getRange(3, 1, sheet.getLastRow() - 2, 3).getValues();
+    filas.forEach(function(f) {
+      if (f[0]) datosActuales[f[0].toString().trim()] = { equipo: f[1] || '', correo: f[2] || '' };
+    });
+  }
+
+  sheet.clear();
+
+  sheet.getRange('A1').setValue('PLANTILLA DE EMPLEADOS')
+    .setFontSize(14).setFontWeight('bold')
+    .setBackground('#0f9d58').setFontColor('#ffffff');
+  sheet.getRange('A1:C1').merge();
+
+  sheet.getRange('A2').setValue('Completa la columna "Equipo" para cada empleado. El sistema la usa para el Resumen y correos.')
+    .setFontStyle('italic').setFontColor('#555555');
+  sheet.getRange('A2:C2').merge();
+
+  var headers = ['Nombre Completo', 'Equipo / Programa', 'Correo'];
+  sheet.getRange(3, 1, 1, 3)
+    .setValues([headers])
+    .setFontWeight('bold')
+    .setBackground('#e8f0fe');
+
+  // Lista completa de empleados con equipos conocidos pre-cargados
+  var empleadosConocidos = [
+    // Gestión de Impacto (4)
+    ['Eneko Arberas García',                       'Gestión de Impacto',        'eneko@creamosguatemala.org'],
+    ['Gedaias Alexander Ajú Suquén',               'Gestión de Impacto',        'alexander@creamosguatemala.org'],
+    ['Adrián Antonio Torres Flores',               'Gestión de Impacto',        'adrian@creamosguatemala.org'],
+    ['Sebastian Stephen Villegas Strange',         'Gestión de Impacto',        'sebastian@creamosguatemala.org'],
+    // Apoyo emocional (4)
+    ['Iris Melissa Payes Argueta',                 'Apoyo emocional',           'melissa@creamosguatemala.org'],
+    ['Diana Michelle Pérez Vaides',                'Apoyo emocional',           'diana@creamosguatemala.org'],
+    ['Jacqueline Paola Tello',                     'Apoyo emocional',           'jacqueline@creamosguatemala.org'],
+    ['Bruna España Bernal',                        'Apoyo emocional',           'bruna@creamosguatemala.org'],
+    // Operaciones (4)
+    ['Alejandro Renato Valdéz Álvarez',            'Operaciones',               'renato@creamosguatemala.org'],
+    ['Maritza Carolina Pérez López',               'Operaciones',               'maritza@creamosguatemala.org'],
+    ['Yhenifer Yaneth Aguilar Rodríguez de Pérez', 'Operaciones',               'yhenifer@creamosguatemala.org'],
+    ['Gerber Josué Álvarez',                       'Operaciones',               'gerber@creamosguatemala.org'],
+    // mi-eelo (4)
+    ['Stephany Tatiana Fuentes Rodríguez',         'mi-eelo',                   'stephany@creamosguatemala.org'],
+    ['Jansel Abel Ojeda Posadas',                  'mi-eelo',                   'jansel@creamosguatemala.org'],
+    ['Juan Josué Alvarado Caxaj',                  'mi-eelo',                   'josue@creamosguatemala.org'],
+    ['Estela Karina Oscal Pixtun',                 'mi-eelo',                   'karina@creamosguatemala.org'],
+    // Educación (5)
+    ['Carmen Rossana Boche Noriega',               'Educación',                 'rossana@creamosguatemala.org'],
+    ['Mildred Alejandra Molina Valiente',          'Educación',                 'mildred@creamosguatemala.org'],
+    ['Irma Jeaneth García',                        'Educación',                 'irma@creamosguatemala.org'],
+    ['Eustolia Beatriz González Gómez',            'Educación',                 'beatriz@creamosguatemala.org'],
+    ['Abraham Jose David Marcos Bámaca Nij',       'Educación',                 'abraham@creamosguatemala.org'],
+    // Inclusión Laboral (4)
+    ['Laura Alejandra Castañeda Leal',             'Inclusión Laboral',         'alejandra@creamosguatemala.org'],
+    ['Eva Priscila López Xaper',                   'Inclusión Laboral',         'eva@creamosguatemala.org'],
+    ['Sindy Lucero Sánchez Barrientos',            'Inclusión Laboral',         'sindy@creamosguatemala.org'],
+    ['Paola Lisbeth Ortiz Ramírez',                'Inclusión Laboral',         'paola@creamosguatemala.org'],
+    // Centro de cuidado infantil (2)
+    ['Carmen Lucía Carías González de Zacher',     'Centro de cuidado infantil','carmen@creamosguatemala.org'],
+    ['Yenifer Pamela Mejía de la Cruz',            'Centro de cuidado infantil','pamela@creamosguatemala.org'],
+    // Administración (1)
+    ['Yenifer Pamela Mejía de la Cruz',            'Administración',            'pamela@creamosguatemala.org']
+  ];
+
+  // Aplicar datos guardados (si el usuario ya editó la hoja)
+  var filasDatos = empleadosConocidos.map(function(emp) {
+    var guardado = datosActuales[emp[0]];
+    return [
+      emp[0],
+      guardado ? (guardado.equipo || emp[1]) : emp[1],
+      guardado ? (guardado.correo || emp[2]) : emp[2]
+    ];
+  });
+
+  sheet.getRange(4, 1, filasDatos.length, 3).setValues(filasDatos);
+
+  // Resaltar filas sin equipo asignado
+  for (var i = 0; i < filasDatos.length; i++) {
+    if (!filasDatos[i][1] || filasDatos[i][1].toString().trim() === '') {
+      sheet.getRange(4 + i, 1, 1, 3).setBackground('#fff3cd');
+    }
+  }
+
+  for (var j = 1; j <= 3; j++) sheet.autoResizeColumn(j);
+
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    'Plantilla creada. Verifica que todos los equipos sean correctos.',
+    'Plantilla de Empleados', 7
+  );
+  Logger.log('Hoja Plantilla de Empleados creada/actualizada');
+}
+
+/**
+ * Lee la hoja "Plantilla de Empleados" y retorna array de {nombre, equipo, correo}
+ */
+function obtenerPlantillaEmpleados() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+
+    if (!sheet || sheet.getLastRow() <= 3) {
+      Logger.log('Plantilla de empleados vacía o no existe. Creándola...');
+      crearHojaPlantillaEmpleados();
+      sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+    }
+
+    var ultimaFila = sheet.getLastRow();
+    if (ultimaFila <= 3) return [];
+
+    var datos = sheet.getRange(4, 1, ultimaFila - 3, 3).getValues();
+    var lista = [];
+    datos.forEach(function(fila) {
+      var nombre = fila[0] ? fila[0].toString().trim() : '';
+      if (nombre === '') return;
+      lista.push({
+        nombre: nombre,
+        equipo: fila[1] ? fila[1].toString().trim() : '',
+        correo: fila[2] ? fila[2].toString().trim() : ''
+      });
+    });
+
+    Logger.log('Plantilla cargada: ' + lista.length + ' empleados');
+    return lista;
+
+  } catch (e) {
+    Logger.log('Error en obtenerPlantillaEmpleados: ' + e.message);
+    return [];
   }
 }
 
@@ -856,33 +1035,48 @@ function escribirResumen(resumen) {
     sheet.getRange(row, 1, 1, 7).merge();
 
     row++;
-    const headersPorPersona = ['Nombre', 'Equipo', 'Director', 'Días Tomados', 'Días Restantes', '% Usado', '# Solicitudes'];
+    // 10 columnas: Nombre, Equipo, Director, S1 Tomados, S1 Restantes, S2 Tomados, S2 Restantes, Total Tomados, Total Restantes, % Usado
+    const headersPorPersona = [
+      'Nombre', 'Equipo', 'Director',
+      'S1 Tomados\n(de 7)', 'S1 Restantes', 'S2 Tomados\n(de 8)', 'S2 Restantes',
+      'Total Tomados\n(de 15)', 'Total Restantes', '% Usado'
+    ];
     sheet.getRange(row, 1, 1, headersPorPersona.length)
       .setValues([headersPorPersona])
       .setFontWeight('bold')
-      .setBackground('#e8f0fe');
+      .setBackground('#e8f0fe')
+      .setWrap(true);
+    sheet.setRowHeight(row, 40);
 
     row++;
     const startRowPersonas = row;
     const datosPersonas = resumen.datosCompletos
-      .sort(function(a, b) { return b.diasTomados - a.diasTomados; })
+      .sort(function(a, b) {
+        // Ordenar por equipo, luego por días tomados desc
+        if (a.equipo < b.equipo) return -1;
+        if (a.equipo > b.equipo) return 1;
+        return b.diasTomados - a.diasTomados;
+      })
       .map(function(p) {
         return [
           p.nombre,
-          p.equipo,
-          p.director,
-          p.diasTomados,
-          p.diasRestantes,
-          parseFloat(p.porcentajeUsado) + '%',
-          p.totalSolicitudes
+          p.equipo || '',
+          p.director || '',
+          p.diasTomadosS1  || 0,
+          p.diasRestantesS1 != null ? p.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1,
+          p.diasTomadosS2  || 0,
+          p.diasRestantesS2 != null ? p.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2,
+          p.diasTomados    || 0,
+          p.diasRestantes  != null ? p.diasRestantes  : CONFIG.DIAS_TOTALES,
+          parseFloat(p.porcentajeUsado || 0) + '%'
         ];
       });
 
     if (datosPersonas.length > 0) {
       sheet.getRange(row, 1, datosPersonas.length, headersPorPersona.length).setValues(datosPersonas);
 
-      // Formato condicional en columna "Días Restantes" (columna 5)
-      const rangoRestantes = sheet.getRange(startRowPersonas, 5, datosPersonas.length, 1);
+      // Formato condicional en "Total Restantes" (columna 9)
+      const rangoRestantes = sheet.getRange(startRowPersonas, 9, datosPersonas.length, 1);
       const rules = [
         SpreadsheetApp.newConditionalFormatRule()
           .whenNumberLessThan(3)
@@ -906,15 +1100,15 @@ function escribirResumen(resumen) {
     row += datosPersonas.length + 2;
 
     // Resumen por equipo
-    sheet.getRange(row, 1).setValue('RESUMEN POR EQUIPO (Ordenado por días tomados)')
+    sheet.getRange(row, 1).setValue('RESUMEN POR EQUIPO')
       .setFontWeight('bold')
       .setFontSize(12)
       .setBackground('#fbbc04')
       .setFontColor('#ffffff');
-    sheet.getRange(row, 1, 1, 5).merge();
+    sheet.getRange(row, 1, 1, 7).merge();
 
     row++;
-    const headersPorEquipo = ['Equipo', 'Personas', 'Días Tomados', 'Días Restantes', 'Promedio por Persona'];
+    const headersPorEquipo = ['Equipo', 'Personas', 'S1 Tomados', 'S1 Restantes', 'S2 Tomados', 'S2 Restantes', 'Total Tomados'];
     sheet.getRange(row, 1, 1, headersPorEquipo.length)
       .setValues([headersPorEquipo])
       .setFontWeight('bold')
@@ -922,12 +1116,18 @@ function escribirResumen(resumen) {
 
     row++;
     const datosEquipos = resumen.porEquipo.map(function(e) {
+      const totalS1Tom = e.personas.reduce(function(s,p) { return s + (p.diasTomadosS1 || 0); }, 0);
+      const totalS1Res = e.personas.reduce(function(s,p) { return s + (p.diasRestantesS1 != null ? p.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1); }, 0);
+      const totalS2Tom = e.personas.reduce(function(s,p) { return s + (p.diasTomadosS2 || 0); }, 0);
+      const totalS2Res = e.personas.reduce(function(s,p) { return s + (p.diasRestantesS2 != null ? p.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2); }, 0);
       return [
         e.equipo,
         e.totalPersonas,
-        e.totalDiasTomados,
-        e.totalDiasRestantes,
-        parseFloat((e.totalDiasTomados / e.totalPersonas).toFixed(1))
+        totalS1Tom,
+        totalS1Res,
+        totalS2Tom,
+        totalS2Res,
+        e.totalDiasTomados
       ];
     });
 
@@ -936,7 +1136,7 @@ function escribirResumen(resumen) {
     }
 
     // Auto-ajustar columnas
-    for (let i = 1; i <= 7; i++) {
+    for (let i = 1; i <= 10; i++) {
       sheet.autoResizeColumn(i);
     }
 
@@ -950,79 +1150,89 @@ function escribirResumen(resumen) {
 
 /**
  * Envía notificación por correo cuando hay nuevos registros
- * @param {Array} registrosNuevos - Filas de registros nuevos
- * @param {Array} headers - Encabezados del CSV
+ * @param {Array} registrosNuevos  - Filas de registros nuevos
+ * @param {Array} headers          - Encabezados del CSV
+ * @param {Array} datosProcessados - Resultado de procesarDatos() con saldos actualizados
  */
-function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
+function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessados) {
   try {
     if (!registrosNuevos || registrosNuevos.length === 0) return;
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
-
-    if (!sheet) {
-      Logger.log('No existe hoja de configuración. Correo no enviado.');
-      return;
-    }
+    if (!sheet) { Logger.log('No existe hoja de configuración. Correo no enviado.'); return; }
 
     const enviarCorreos = leerConfigPorEtiqueta(sheet, 'Enviar correos (TRUE/FALSE):', false);
-
     if (!enviarCorreos || enviarCorreos.toString().toLowerCase() !== 'true') {
       Logger.log('Envío de correos deshabilitado');
       return;
     }
 
-    const correoAdmin = leerConfigPorEtiqueta(sheet, 'Correo del administrador: (*)', null)
-      || leerConfigPorEtiqueta(sheet, 'Correo del administrador:', null);
-
-    if (!correoAdmin || correoAdmin.toString().trim() === '') {
-      Logger.log('No se ha configurado correo del administrador');
-      return;
+    // Construir mapa de saldos para búsqueda rápida
+    const saldoMap = {};
+    if (datosProcessados) {
+      datosProcessados.forEach(function(p) { saldoMap[p.nombre] = p; });
     }
 
-    // Identificar columnas de equipo y fechas para el correo
-    const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
-    const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
-    const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
+    const colFechaInicio   = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
+    const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
+    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
+    const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
+    const mapeoDirectores  = obtenerMapeoDirectores();
 
-    const asunto = 'Nueva(s) solicitud(es) de días personales - ' + registrosNuevos.length + ' registro(s)';
-    const cuerpo = crearCorreoNuevoRegistro(registrosNuevos, headers, colEquipo, colFechaInicio, colFechaFin);
-
-    MailApp.sendEmail({
-      to: correoAdmin.toString().trim(),
-      subject: asunto,
-      htmlBody: cuerpo
-    });
-
-    Logger.log('Notificación enviada al administrador: ' + correoAdmin);
-
-    // Enviar confirmación a cada empleado cuya solicitud fue procesada
+    // Procesar cada nuevo registro
     registrosNuevos.forEach(function(reg) {
-      const nombreEmpleado = extraerNombreDeFila(headers, reg);
-      const correoEmpleado = CONFIG.CORREOS_EMPLEADOS[nombreEmpleado];
-      if (!correoEmpleado) {
-        Logger.log('No se encontró correo para: ' + nombreEmpleado);
-        return;
+      const nombreEmpleado = extraerNombreDeFila(headers, reg) || 'Sin nombre';
+      const equipoEmpleado = (colEquipo >= 0 ? (reg[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
+      const fechaInicio    = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
+      const fechaFin       = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
+
+      let diasEstaSolicitud = calcularDiasEntreFechas(fechaInicio, fechaFin);
+      if (diasEstaSolicitud === 0 && fechaInicio !== 'No especificada' && colDiasSolicitados >= 0) {
+        const v = parseInt((reg[colDiasSolicitados] || '0').toString().trim(), 10);
+        if (v > 0) diasEstaSolicitud = v;
       }
-      try {
-        const fechaInicio = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
-        const fechaFin    = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
-        const cuerpoEmp =
-          '<p>Hola <strong>' + nombreEmpleado + '</strong>,</p>' +
-          '<p>Tu solicitud de días personales ha sido registrada correctamente:</p>' +
-          '<ul>' +
-          '<li><strong>Fecha inicio:</strong> ' + fechaInicio + '</li>' +
-          '<li><strong>Fecha fin:</strong> '    + fechaFin    + '</li>' +
-          '</ul>' +
-          '<p>Para consultas, responde este correo o contacta a tu director.</p>' +
-          '<p style="color:#888;font-size:12px;">Correo generado automáticamente — Sistema de Gestión de Días Personales, Creamos Guatemala.</p>';
-        MailApp.sendEmail({
-          to: correoEmpleado,
-          subject: 'Confirmación de solicitud de días personales',
-          htmlBody: cuerpoEmp
-        });
-        Logger.log('Confirmación enviada a empleado: ' + correoEmpleado);
-      } catch (errEmp) {
-        Logger.log('Error enviando correo a ' + nombreEmpleado + ': ' + errEmp.message);
+
+      const saldo        = saldoMap[nombreEmpleado] || null;
+      const infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
+      const correoDir    = infoDirector.correo;
+      const correoEmp    = (saldo && saldo.correoEmpleado) ? saldo.correoEmpleado : (CONFIG.CORREOS_EMPLEADOS[nombreEmpleado] || '');
+
+      // ── Correo al DIRECTOR ────────────────────────────────────────────────
+      if (correoDir && correoDir.trim() !== '') {
+        try {
+          // Compañeros de equipo para el resumen
+          const companeros = datosProcessados
+            ? datosProcessados.filter(function(p) {
+                return normalizarTexto(p.equipo) === normalizarTexto(equipoEmpleado);
+              })
+            : [];
+
+          const asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
+          const cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
+
+          MailApp.sendEmail({ to: correoDir.trim(), subject: asuntoDir, htmlBody: cuerpoDir });
+          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ')');
+        } catch (errDir) {
+          Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
+        }
+      } else {
+        Logger.log('Director sin correo configurado para equipo: ' + equipoEmpleado);
+      }
+
+      // ── Correo al EMPLEADO ────────────────────────────────────────────────
+      if (correoEmp && correoEmp.trim() !== '') {
+        try {
+          const asuntoEmp = '[Días Personales] Tu solicitud fue registrada — quedan ' +
+            (saldo ? saldo.diasRestantes : '?') + ' día(s)';
+          const cuerpoEmp = construirCorreoEmpleado(nombreEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo);
+
+          MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
+          Logger.log('Correo enviado al empleado: ' + correoEmp);
+        } catch (errEmp) {
+          Logger.log('Error enviando correo al empleado ' + nombreEmpleado + ': ' + errEmp.message);
+        }
+      } else {
+        Logger.log('Sin correo configurado para empleado: ' + nombreEmpleado);
       }
     });
 
@@ -1032,45 +1242,134 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers) {
 }
 
 /**
- * Crea el cuerpo del correo para nuevos registros
+ * Construye el HTML del correo al DIRECTOR con el detalle del empleado y resumen del equipo.
  */
-function crearCorreoNuevoRegistro(registros, headers, colEquipo, colFechaInicio, colFechaFin) {
-  const items = registros.map(function(reg, index) {
+function construirCorreoDirector(nombre, equipo, fechaIni, fechaFin, diasSolicitud, saldo, companeros) {
+  var s1Tom = saldo ? (saldo.diasTomadosS1 || 0) : 0;
+  var s1Res = saldo ? (saldo.diasRestantesS1 != null ? saldo.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1) : CONFIG.DIAS_SEMESTRE_1;
+  var s2Tom = saldo ? (saldo.diasTomadosS2 || 0) : 0;
+  var s2Res = saldo ? (saldo.diasRestantesS2 != null ? saldo.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2) : CONFIG.DIAS_SEMESTRE_2;
+  var totTom = saldo ? (saldo.diasTomados || 0) : diasSolicitud;
+  var totRes = saldo ? (saldo.diasRestantes != null ? saldo.diasRestantes : CONFIG.DIAS_TOTALES) : CONFIG.DIAS_TOTALES;
+
+  // Tabla resumen del equipo
+  var filasEquipo = companeros.map(function(p) {
+    var resColor = p.diasRestantes < 3 ? '#f4c7c3' : (p.diasRestantes < 7 ? '#fce8b2' : '#b7e1cd');
     return '<tr>' +
-      '<td>' + (index + 1) + '</td>' +
-      '<td>' + (extraerNombreDeFila(headers, reg) || 'Sin nombre') + '</td>' +
-      '<td>' + (colEquipo >= 0 ? (reg[colEquipo] || 'Sin equipo') : 'Sin equipo') + '</td>' +
-      '<td>' + (colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada') + '</td>' +
-      '<td>' + (colFechaFin >= 0 ? (reg[colFechaFin] || 'No especificada') : 'No especificada') + '</td>' +
+      '<td style="padding:6px 10px;">' + p.nombre + (p.nombre === nombre ? ' <b>(esta solicitud)</b>' : '') + '</td>' +
+      '<td style="padding:6px 10px;text-align:center;">' + (p.diasRestantesS1 != null ? p.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1) + '</td>' +
+      '<td style="padding:6px 10px;text-align:center;">' + (p.diasRestantesS2 != null ? p.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2) + '</td>' +
+      '<td style="padding:6px 10px;text-align:center;background:' + resColor + ';">' + (p.diasRestantes != null ? p.diasRestantes : CONFIG.DIAS_TOTALES) + '</td>' +
       '</tr>';
   }).join('');
 
-  return '<html>' +
-    '<body style="font-family: Arial, sans-serif;">' +
-    '<h2>Nueva(s) Solicitud(es) de Días Personales</h2>' +
-    '<p>Se ha(n) recibido <strong>' + registros.length + '</strong> nueva(s) solicitud(es):</p>' +
-    '<table border="1" cellpadding="10" style="border-collapse: collapse;">' +
-    '<thead>' +
-    '<tr style="background-color: #4285f4; color: white;">' +
-    '<th>#</th>' +
-    '<th>Nombre</th>' +
-    '<th>Equipo</th>' +
-    '<th>Fecha Inicio</th>' +
-    '<th>Fecha Fin</th>' +
-    '</tr>' +
-    '</thead>' +
-    '<tbody>' + items + '</tbody>' +
+  return '<html><body style="font-family:Arial,sans-serif;color:#333;">' +
+    '<div style="background:#0f9d58;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">' +
+    '<h2 style="margin:0;">📅 Nueva solicitud de día personal</h2>' +
+    '<p style="margin:4px 0 0;">' + new Date().toLocaleDateString('es-ES', { weekday:'long', year:'numeric', month:'long', day:'numeric' }) + '</p>' +
+    '</div>' +
+    '<div style="border:1px solid #ddd;border-top:none;padding:20px;border-radius:0 0 8px 8px;">' +
+
+    '<h3 style="color:#0f9d58;">Detalle de la solicitud</h3>' +
+    '<table style="border-collapse:collapse;width:100%;max-width:480px;">' +
+    '<tr><td style="padding:5px 10px;font-weight:bold;">Empleado:</td><td style="padding:5px 10px;">' + nombre + '</td></tr>' +
+    '<tr style="background:#f5f5f5;"><td style="padding:5px 10px;font-weight:bold;">Equipo:</td><td style="padding:5px 10px;">' + equipo + '</td></tr>' +
+    '<tr><td style="padding:5px 10px;font-weight:bold;">Fecha inicio:</td><td style="padding:5px 10px;">' + fechaIni + '</td></tr>' +
+    '<tr style="background:#f5f5f5;"><td style="padding:5px 10px;font-weight:bold;">Fecha fin:</td><td style="padding:5px 10px;">' + fechaFin + '</td></tr>' +
+    '<tr><td style="padding:5px 10px;font-weight:bold;">Días de esta solicitud:</td><td style="padding:5px 10px;"><strong>' + diasSolicitud + '</strong></td></tr>' +
     '</table>' +
-    '<p style="margin-top: 20px;">' +
+
+    '<h3 style="color:#0f9d58;margin-top:20px;">Saldo actual de ' + nombre + '</h3>' +
+    '<table style="border-collapse:collapse;width:100%;max-width:480px;">' +
+    '<thead><tr style="background:#0f9d58;color:#fff;">' +
+    '<th style="padding:8px 12px;text-align:left;">Período</th>' +
+    '<th style="padding:8px 12px;text-align:center;">Asignados</th>' +
+    '<th style="padding:8px 12px;text-align:center;">Tomados</th>' +
+    '<th style="padding:8px 12px;text-align:center;">Restantes</th>' +
+    '</tr></thead><tbody>' +
+    '<tr><td style="padding:6px 12px;">Semestre 1 (Ene–Jun)</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_1 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + s1Tom + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;background:' + (s1Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s1Res + '</td></tr>' +
+    '<tr style="background:#f5f5f5;"><td style="padding:6px 12px;">Semestre 2 (Jul–Dic)</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_2 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + s2Tom + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;background:' + (s2Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s2Res + '</td></tr>' +
+    '<tr style="font-weight:bold;border-top:2px solid #ddd;"><td style="padding:6px 12px;">Total anual</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_TOTALES + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + totTom + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;background:' + (totRes < 3 ? '#f4c7c3' : (totRes < 7 ? '#fce8b2' : '#b7e1cd')) + ';">' + totRes + '</td></tr>' +
+    '</tbody></table>' +
+
+    (companeros.length > 0 ?
+      '<h3 style="color:#0f9d58;margin-top:20px;">Resumen del equipo — ' + equipo + '</h3>' +
+      '<table style="border-collapse:collapse;width:100%;max-width:560px;">' +
+      '<thead><tr style="background:#0f9d58;color:#fff;">' +
+      '<th style="padding:8px 12px;text-align:left;">Nombre</th>' +
+      '<th style="padding:8px 12px;text-align:center;">S1 Rest.</th>' +
+      '<th style="padding:8px 12px;text-align:center;">S2 Rest.</th>' +
+      '<th style="padding:8px 12px;text-align:center;">Total Rest.</th>' +
+      '</tr></thead><tbody>' + filasEquipo + '</tbody></table>'
+    : '') +
+
+    '<p style="margin-top:24px;">' +
     '<a href="' + SpreadsheetApp.getActiveSpreadsheet().getUrl() + '" ' +
-    'style="background-color: #4285f4; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">' +
-    'Ver Resumen Completo</a>' +
+    'style="background:#0f9d58;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;">Ver Resumen Completo</a>' +
     '</p>' +
-    '<p style="color: #666; font-size: 12px; margin-top: 30px;">' +
-    'Notificación automática - ' + new Date().toLocaleString('es-ES') +
-    '</p>' +
-    '</body>' +
-    '</html>';
+    '<p style="color:#999;font-size:11px;margin-top:24px;">Correo automático — Sistema de Días Personales · Creamos Guatemala · ' + new Date().toLocaleString('es-ES') + '</p>' +
+    '</div></body></html>';
+}
+
+/**
+ * Construye el HTML del correo al EMPLEADO con su saldo por semestre.
+ */
+function construirCorreoEmpleado(nombre, fechaIni, fechaFin, diasSolicitud, saldo) {
+  var s1Tom = saldo ? (saldo.diasTomadosS1 || 0) : 0;
+  var s1Res = saldo ? (saldo.diasRestantesS1 != null ? saldo.diasRestantesS1 : CONFIG.DIAS_SEMESTRE_1) : CONFIG.DIAS_SEMESTRE_1;
+  var s2Tom = saldo ? (saldo.diasTomadosS2 || 0) : 0;
+  var s2Res = saldo ? (saldo.diasRestantesS2 != null ? saldo.diasRestantesS2 : CONFIG.DIAS_SEMESTRE_2) : CONFIG.DIAS_SEMESTRE_2;
+  var totTom = saldo ? (saldo.diasTomados || 0) : diasSolicitud;
+  var totRes = saldo ? (saldo.diasRestantes != null ? saldo.diasRestantes : CONFIG.DIAS_TOTALES) : CONFIG.DIAS_TOTALES;
+
+  return '<html><body style="font-family:Arial,sans-serif;color:#333;">' +
+    '<div style="background:#4285f4;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0;">' +
+    '<h2 style="margin:0;">📅 Tus días personales — Creamos Guatemala</h2>' +
+    '</div>' +
+    '<div style="border:1px solid #ddd;border-top:none;padding:20px;border-radius:0 0 8px 8px;">' +
+    '<p>Hola <strong>' + nombre + '</strong>,</p>' +
+    '<p>Tu solicitud de días personales ha sido <strong>registrada correctamente</strong>.</p>' +
+
+    '<table style="border-collapse:collapse;width:100%;max-width:400px;margin-bottom:20px;">' +
+    '<tr><td style="padding:5px 10px;font-weight:bold;">Fecha inicio:</td><td style="padding:5px 10px;">' + fechaIni + '</td></tr>' +
+    '<tr style="background:#f5f5f5;"><td style="padding:5px 10px;font-weight:bold;">Fecha fin:</td><td style="padding:5px 10px;">' + fechaFin + '</td></tr>' +
+    '<tr><td style="padding:5px 10px;font-weight:bold;">Días de esta solicitud:</td><td style="padding:5px 10px;"><strong>' + diasSolicitud + '</strong></td></tr>' +
+    '</table>' +
+
+    '<h3 style="color:#4285f4;">Tu saldo de días personales</h3>' +
+    '<table style="border-collapse:collapse;width:100%;max-width:480px;">' +
+    '<thead><tr style="background:#4285f4;color:#fff;">' +
+    '<th style="padding:8px 12px;text-align:left;">Período</th>' +
+    '<th style="padding:8px 12px;text-align:center;">Asignados</th>' +
+    '<th style="padding:8px 12px;text-align:center;">Tomados</th>' +
+    '<th style="padding:8px 12px;text-align:center;">Restantes</th>' +
+    '</tr></thead><tbody>' +
+    '<tr><td style="padding:6px 12px;">Semestre 1 (Ene–Jun)</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_1 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + s1Tom + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;background:' + (s1Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s1Res + '</td></tr>' +
+    '<tr style="background:#f5f5f5;"><td style="padding:6px 12px;">Semestre 2 (Jul–Dic)</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_SEMESTRE_2 + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + s2Tom + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;background:' + (s2Res < 2 ? '#f4c7c3' : '#b7e1cd') + ';">' + s2Res + '</td></tr>' +
+    '<tr style="font-weight:bold;border-top:2px solid #ddd;"><td style="padding:6px 12px;">Total anual</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + CONFIG.DIAS_TOTALES + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;">' + totTom + '</td>' +
+    '<td style="padding:6px 12px;text-align:center;background:' + (totRes < 3 ? '#f4c7c3' : (totRes < 7 ? '#fce8b2' : '#b7e1cd')) + ';">' + totRes + '</td></tr>' +
+    '</tbody></table>' +
+
+    '<p style="margin-top:16px;">Para cualquier consulta, responde este correo o contacta a tu director directo.</p>' +
+    '<p style="color:#999;font-size:11px;margin-top:24px;">Correo automático — Sistema de Días Personales · Creamos Guatemala · ' + new Date().toLocaleString('es-ES') + '</p>' +
+    '</div></body></html>';
 }
 
 /**
@@ -1375,6 +1674,7 @@ function onOpen() {
       .addSeparator()
       .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
       .addItem('👥 Configurar Directores', 'crearHojaDirectores')
+      .addItem('👤 Configurar Plantilla de Empleados', 'crearHojaPlantillaEmpleados')
       .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
@@ -1427,6 +1727,7 @@ function reinstalarSistema() {
     const hojasASistema = [
       CONFIG.SHEET_NAME_CONFIG,
       CONFIG.SHEET_NAME_DIRECTORES,
+      CONFIG.SHEET_NAME_PLANTILLA,
       CONFIG.SHEET_NAME_DATOS,
       CONFIG.SHEET_NAME_RESUMEN,
       CONFIG.SHEET_NAME_HISTORIAL
@@ -1466,8 +1767,9 @@ function reinstalarSistema() {
     // ── PASO 3: Recrear hoja de Configuración ────────────────────────────────
     crearHojaConfiguracion();
 
-    // ── PASO 4: Recrear hoja de Directores ───────────────────────────────────
+    // ── PASO 4: Recrear hoja de Directores y Plantilla de Empleados ──────────
     crearHojaDirectores();
+    crearHojaPlantillaEmpleados();
 
     // ── PASO 5: Crear hojas vacías para Datos, Resumen e Historial ───────────
     [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
