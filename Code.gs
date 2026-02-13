@@ -535,8 +535,21 @@ function procesarDatos(datosCSV) {
         diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
       }
 
+      // Buscar el empleado en el map usando nombre normalizado (evita duplicados por acentos/mayúsculas)
+      var claveEncontrada = null;
+      if (empleadosMap.has(nombre)) {
+        claveEncontrada = nombre;
+      } else {
+        var nombNorm = normalizarTexto(nombre);
+        empleadosMap.forEach(function(v, k) {
+          if (!claveEncontrada && normalizarTexto(k) === nombNorm) {
+            claveEncontrada = k;
+          }
+        });
+      }
+
       // Si el empleado no está en la plantilla, agregarlo igualmente
-      if (!empleadosMap.has(nombre)) {
+      if (!claveEncontrada) {
         const infoDir = buscarDirectorPorEquipo(mapeoDirectores, equipo) || { nombre: 'Sin asignar', correo: '' };
         empleadosMap.set(nombre, {
           nombre:         nombre,
@@ -548,9 +561,10 @@ function procesarDatos(datosCSV) {
           diasTomadosS2:  0,
           solicitudes:    []
         });
+        claveEncontrada = nombre;
       }
 
-      const emp = empleadosMap.get(nombre);
+      const emp = empleadosMap.get(claveEncontrada);
       const semestre = getSemestre(fechaInicio);
       if (semestre === 1) {
         emp.diasTomadosS1 += diasSolicitados;
@@ -1393,10 +1407,6 @@ function construirCorreoDirector(nombre, equipo, fechaIni, fechaFin, diasSolicit
       '</tr></thead><tbody>' + filasEquipo + '</tbody></table>'
     : '') +
 
-    '<p style="margin-top:24px;">' +
-    '<a href="' + SpreadsheetApp.getActiveSpreadsheet().getUrl() + '" ' +
-    'style="background:#0f9d58;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;">Ver Resumen Completo</a>' +
-    '</p>' +
     '<p style="color:#999;font-size:11px;margin-top:24px;">Correo automático — Sistema de Días Personales · Creamos Guatemala · ' + new Date().toLocaleString('es-ES') + '</p>' +
     '</div></body></html>';
 }
@@ -1754,6 +1764,7 @@ function onOpen() {
     ui.createMenu('Días Personales')
       .addItem('🚀 Instalar Todo (1 clic)', 'instalarTodo')
       .addSeparator()
+      .addItem('🔃 Actualizar Todo (empleados + datos)', 'actualizarTodo')
       .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
       .addItem('🔄 Actualizar Lista de Empleados', 'actualizarEmpleados')
       .addSeparator()
@@ -1784,6 +1795,18 @@ function actualizarEmpleados() {
     '✅ Lista de empleados actualizada correctamente.',
     'Actualizar Empleados', 5
   );
+}
+
+/**
+ * Actualiza la lista de empleados Y los datos de KoboToolbox en un solo clic.
+ */
+function actualizarTodo() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.toast('Actualizando lista de empleados...', 'Actualizar Todo', 5);
+  crearHojaPlantillaEmpleados();
+  ss.toast('Sincronizando datos con KoboToolbox...', 'Actualizar Todo', 5);
+  ejecutarSistema();
+  ss.toast('✅ Todo actualizado correctamente.', 'Actualizar Todo', 6);
 }
 
 /**
