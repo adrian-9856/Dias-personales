@@ -50,7 +50,7 @@ const CONFIG = {
     'Gestión de Impacto':        { nombre: 'Eneko Arberas García',              correo: 'eneko@creamosguatemala.org' },
     'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',      correo: 'rossana@creamosguatemala.org' },
     'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher', correo: 'carmen@creamosguatemala.org' },
-    'Administración':            { nombre: 'Carmen Lucía Carías González de Zacher', correo: 'carmen@creamosguatemala.org' },
+    'Administración':            { nombre: 'Hannah',                                  correo: 'hannah@creamosguatemala.org' },
     'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',    correo: 'alejandra@creamosguatemala.org' }
   },
 
@@ -1269,43 +1269,56 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
     const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const mapeoDirectores  = obtenerMapeoDirectores();
 
-    // Procesar cada nuevo registro
+    // Agrupar registros por empleado → un solo correo por persona aunque tenga varios registros nuevos
+    var gruposPorEmpleado = {};
     registrosNuevos.forEach(function(reg) {
-      const nombreEmpleado = extraerNombreDeFila(headers, reg) || 'Sin nombre';
-      const equipoEmpleado = (colEquipo >= 0 ? (reg[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
-      const fechaInicio    = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
-      const fechaFin       = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
+      var nombre = extraerNombreDeFila(headers, reg) || 'Sin nombre';
+      if (!gruposPorEmpleado[nombre]) gruposPorEmpleado[nombre] = [];
+      gruposPorEmpleado[nombre].push(reg);
+    });
 
-      // Prioridad: campo "Día personal solicitado"; respaldo: cálculo por fechas
-      let diasEstaSolicitud = 0;
-      if (colDiasSolicitados >= 0) {
-        const v = parseInt((reg[colDiasSolicitados] || '0').toString().trim(), 10);
-        if (v > 0) diasEstaSolicitud = v;
-      }
-      if (diasEstaSolicitud === 0) {
-        diasEstaSolicitud = calcularDiasEntreFechas(fechaInicio, fechaFin);
-      }
+    Object.keys(gruposPorEmpleado).forEach(function(nombreEmpleado) {
+      var regs = gruposPorEmpleado[nombreEmpleado];
+      // Usar el último registro para equipo y fechas del correo
+      var reg = regs[regs.length - 1];
 
-      const saldo        = saldoMap[nombreEmpleado] || null;
-      const infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
-      const correoDir    = infoDirector.correo;
-      const correoEmp    = (saldo && saldo.correoEmpleado) ? saldo.correoEmpleado : (CONFIG.CORREOS_EMPLEADOS[nombreEmpleado] || '');
+      var equipoEmpleado = (colEquipo >= 0 ? (reg[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
+      var fechaInicio    = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
+      var fechaFin       = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
+
+      // Sumar días de TODOS los registros nuevos del empleado
+      var diasEstaSolicitud = regs.reduce(function(sum, r) {
+        var d = 0;
+        if (colDiasSolicitados >= 0) {
+          d = parseInt((r[colDiasSolicitados] || '0').toString().trim(), 10);
+        }
+        if (d === 0) {
+          var fi = colFechaInicio >= 0 ? (r[colFechaInicio] || '') : '';
+          var ff = colFechaFin    >= 0 ? (r[colFechaFin]    || '') : '';
+          d = calcularDiasEntreFechas(fi, ff);
+        }
+        return sum + d;
+      }, 0);
+
+      var saldo        = saldoMap[nombreEmpleado] || null;
+      var infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
+      var correoDir    = infoDirector.correo;
+      var correoEmp    = (saldo && saldo.correoEmpleado) ? saldo.correoEmpleado : (CONFIG.CORREOS_EMPLEADOS[nombreEmpleado] || '');
 
       // ── Correo al DIRECTOR ────────────────────────────────────────────────
       if (correoDir && correoDir.trim() !== '') {
         try {
-          // Compañeros de equipo para el resumen
-          const companeros = datosProcessados
+          var companeros = datosProcessados
             ? datosProcessados.filter(function(p) {
                 return normalizarTexto(p.equipo) === normalizarTexto(equipoEmpleado);
               })
             : [];
 
-          const asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
-          const cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
+          var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
+          var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
 
           MailApp.sendEmail({ to: correoDir.trim(), subject: asuntoDir, htmlBody: cuerpoDir });
-          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ')');
+          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ') — ' + regs.length + ' registro(s) agrupado(s)');
         } catch (errDir) {
           Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
         }
@@ -1316,9 +1329,9 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       // ── Correo al EMPLEADO ────────────────────────────────────────────────
       if (correoEmp && correoEmp.trim() !== '') {
         try {
-          const asuntoEmp = '[Días Personales] Tu solicitud fue registrada — quedan ' +
+          var asuntoEmp = '[Días Personales] Tu solicitud fue registrada — quedan ' +
             (saldo ? saldo.diasRestantes : '?') + ' día(s)';
-          const cuerpoEmp = construirCorreoEmpleado(nombreEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo);
+          var cuerpoEmp = construirCorreoEmpleado(nombreEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo);
 
           MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
           Logger.log('Correo enviado al empleado: ' + correoEmp);
