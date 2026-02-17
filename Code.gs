@@ -1824,8 +1824,8 @@ function onOpen() {
     ui.createMenu('Días Personales')
       .addItem('🚀 Instalar Todo (1 clic)', 'instalarTodo')
       .addSeparator()
-      .addItem('🔃 Actualizar Todo (empleados + datos)', 'actualizarTodo')
-      .addItem('▶ Actualizar Datos Manualmente', 'ejecutarSistema')
+      .addItem('🆕 Buscar Nuevos Registros', 'buscarNuevosRegistros')
+      .addItem('🔃 Actualizar Todo (sin borrar nada)', 'actualizarTodo')
       .addItem('🔄 Actualizar Lista de Empleados', 'actualizarEmpleados')
       .addSeparator()
       .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
@@ -1855,6 +1855,35 @@ function actualizarEmpleados() {
     '✅ Lista de empleados actualizada correctamente.',
     'Actualizar Empleados', 5
   );
+}
+
+/**
+ * Busca SOLO registros nuevos en KoboToolbox (los que no están en el Historial),
+ * actualiza el Resumen, agrega al Historial y envía correos si aplica.
+ * NO borra ni modifica ninguna hoja existente.
+ */
+function buscarNuevosRegistros() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var fechaAhora = new Date().toLocaleString('es-ES');
+  ss.toast('Buscando registros nuevos en KoboToolbox...', 'Buscando...', 5);
+  try {
+    var datosKobo = obtenerDatosKoboToolbox();
+    if (!datosKobo || datosKobo.length <= 1) {
+      ss.toast('Sin datos disponibles en KoboToolbox.', 'Sin datos', 5);
+      return;
+    }
+    var nuevos = detectarRegistrosNuevos(datosKobo);
+    if (nuevos.length === 0) {
+      ss.toast('✅ Sin registros nuevos. Última revisión: ' + fechaAhora, 'Al día', 7);
+      return;
+    }
+    // Hay registros nuevos → ejecutar el sistema completo
+    ejecutarSistema();
+    ss.toast('✅ ' + nuevos.length + ' registro(s) nuevo(s) procesado(s) — ' + fechaAhora, 'Nuevos registros', 8);
+  } catch (e) {
+    ss.toast('Error: ' + e.message, 'Error', 10);
+    Logger.log('Error en buscarNuevosRegistros: ' + e.message);
+  }
 }
 
 /**
