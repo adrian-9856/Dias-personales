@@ -202,7 +202,10 @@ function ejecutarSistema() {
   } catch (error) {
     Logger.log('Error en ejecutarSistema: ' + error.message);
     SpreadsheetApp.getActiveSpreadsheet().toast('Error: ' + error.message, 'Error', 10);
-    enviarCorreoError(error);
+    // Solo enviar correo si es un error real (token, URL, etc.), NO por caídas temporales del servidor
+    if (!error.esErrorServidor) {
+      enviarCorreoError(error);
+    }
   }
 }
 
@@ -311,7 +314,10 @@ function obtenerDatosKoboToolbox() {
     }
 
     if (responseCode !== 200) {
-      throw new Error('Error al conectar con KoboToolbox. Código HTTP: ' + responseCode + '. Verifica tu token y URL.');
+      // Errores de servidor temporal (502, 503, 504): solo registrar, NO enviar correo
+      var errConexion = new Error('Error al conectar con KoboToolbox. Código HTTP: ' + responseCode + '. Verifica tu token y URL.');
+      errConexion.esErrorServidor = (responseCode === 502 || responseCode === 503 || responseCode === 504);
+      throw errConexion;
     }
 
     // Forzar UTF-8 y eliminar BOM (\uFEFF) que rompe Utilities.parseCsv
