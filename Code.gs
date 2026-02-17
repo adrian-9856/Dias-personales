@@ -290,8 +290,17 @@ function obtenerDatosKoboToolbox() {
       muteHttpExceptions: true
     };
 
-    const response = UrlFetchApp.fetch(urlStr, options);
-    const responseCode = response.getResponseCode();
+    // Reintentos automáticos para errores temporales (502, 503, 504)
+    var response;
+    var responseCode;
+    var MAX_INTENTOS = 3;
+    for (var intento = 1; intento <= MAX_INTENTOS; intento++) {
+      response = UrlFetchApp.fetch(urlStr, options);
+      responseCode = response.getResponseCode();
+      if (responseCode !== 502 && responseCode !== 503 && responseCode !== 504) break;
+      Logger.log('KoboToolbox devolvió ' + responseCode + ' (intento ' + intento + '/' + MAX_INTENTOS + '). Reintentando en 5 segundos...');
+      if (intento < MAX_INTENTOS) Utilities.sleep(5000);
+    }
 
     if (responseCode === 401) {
       throw new Error('Token de KoboToolbox inválido o expirado. Verifica el token en la hoja "Configuración".');
