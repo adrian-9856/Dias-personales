@@ -1343,8 +1343,43 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       }
     });
 
+    // Marcar en verde las filas del historial donde se enviaron correos
+    marcarCorreoEnviadoEnHistorial(Object.keys(gruposPorEmpleado));
+
   } catch (error) {
     Logger.log('Error en enviarNotificacionNuevoRegistro: ' + error.message);
+  }
+}
+
+/**
+ * Marca en verde las filas del historial para los empleados que recibieron correo.
+ * Columna 8 (Estado) cambia a "Correo Enviado" y la fila se colorea verde.
+ */
+function marcarCorreoEnviadoEnHistorial(nombresEmpleados) {
+  try {
+    if (!nombresEmpleados || nombresEmpleados.length === 0) return;
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+
+    var lastRow = sheet.getLastRow();
+    var startRow = Math.max(2, lastRow - 200); // revisar últimas 200 filas
+    var numRows = lastRow - startRow + 1;
+    var data = sheet.getRange(startRow, 1, numRows, 8).getValues();
+
+    var nombresNorm = nombresEmpleados.map(normalizarTexto);
+
+    for (var i = 0; i < data.length; i++) {
+      var nombreFila = normalizarTexto((data[i][2] || '').toString());
+      var estadoFila = (data[i][7] || '').toString();
+      if (nombresNorm.indexOf(nombreFila) >= 0 && estadoFila === 'Procesado') {
+        var fila = startRow + i;
+        sheet.getRange(fila, 8).setValue('Correo Enviado');
+        sheet.getRange(fila, 1, 1, 8).setBackground('#b7e1cd'); // verde
+      }
+    }
+    Logger.log('Historial marcado en verde para ' + nombresEmpleados.length + ' empleado(s)');
+  } catch (e) {
+    Logger.log('Error en marcarCorreoEnviadoEnHistorial: ' + e.message);
   }
 }
 
@@ -1478,10 +1513,21 @@ function construirCorreoEmpleado(nombre, fechaIni, fechaFin, diasSolicitud, sald
 }
 
 /**
- * Envía correo de error al administrador
+ * Envía correo de error al administrador.
+ * Rate limit: máximo 1 correo de error cada 2 horas para evitar inundación.
  */
 function enviarCorreoError(error) {
   try {
+    // ── Rate limiting: un correo de error máximo cada 2 horas ────────────────
+    var props = PropertiesService.getScriptProperties();
+    var ultimoEnvio = parseInt(props.getProperty('ULTIMO_CORREO_ERROR') || '0', 10);
+    var ahora = Date.now();
+    if (ahora - ultimoEnvio < 7200000) { // 2 horas en milisegundos
+      Logger.log('Correo de error omitido (cooldown 2h activo). Error: ' + error.message);
+      return;
+    }
+    props.setProperty('ULTIMO_CORREO_ERROR', String(ahora));
+
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME_CONFIG);
 
     if (!sheet) return;
@@ -1496,7 +1542,8 @@ function enviarCorreoError(error) {
       subject: 'Error en Sistema de Días Personales',
       body: 'Se ha producido un error en el sistema:\n\nError: ' + error.message +
         '\n\nStack: ' + (error.stack || 'No disponible') +
-        '\n\nFecha: ' + new Date().toLocaleString('es-ES')
+        '\n\nFecha: ' + new Date().toLocaleString('es-ES') +
+        '\n\nNOTA: Los errores repetidos se agrupan y solo se notifica una vez cada 2 horas.'
     });
 
   } catch (e) {
@@ -1811,15 +1858,17 @@ function actualizarEmpleados() {
 }
 
 /**
- * Actualiza la lista de empleados Y los datos de KoboToolbox en un solo clic.
+ * Sincroniza datos de KoboToolbox y actualiza el Resumen SIN borrar ni recrear
+ * ninguna hoja existente (plantilla, historial, directores, configuración intactos).
  */
 function actualizarTodo() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.toast('Actualizando lista de empleados...', 'Actualizar Todo', 5);
-  crearHojaPlantillaEmpleados();
-  ss.toast('Sincronizando datos con KoboToolbox...', 'Actualizar Todo', 5);
+  var fechaAhora = new Date().toLocaleString('es-ES');
+  ss.toast('Sincronizando datos con KoboToolbox...', 'Actualizar Todo', 8);
   ejecutarSistema();
-  ss.toast('✅ Todo actualizado correctamente.', 'Actualizar Todo', 6);
+  // Guardar fecha de última actualización
+  PropertiesService.getScriptProperties().setProperty('ULTIMA_ACTUALIZACION', fechaAhora);
+  ss.toast('✅ Datos actualizados el ' + fechaAhora, 'Última actualización', 8);
 }
 
 /**
