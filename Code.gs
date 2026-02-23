@@ -424,7 +424,7 @@ function agregarAlHistorial(registrosNuevos, headers) {
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
-    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
+    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested', 'd_as_personal', 'dia_personal', 'días personales', 'dias_de_personal', 'numero_de_dias', 'cuantos_dias', 'cuantos d', 'd_as_de_personal']);
 
     const ultimaFila = sheet.getLastRow() + 1;
     const fechaProceso = new Date();
@@ -505,9 +505,10 @@ function procesarDatos(datosCSV) {
     const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
     const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
     const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
-    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
+    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested', 'd_as_personal', 'dia_personal', 'días personales', 'dias_de_personal', 'numero_de_dias', 'cuantos_dias', 'cuantos d', 'd_as_de_personal']);
 
-    Logger.log('Columnas - Equipo:' + colEquipo + ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin);
+    Logger.log('Encabezados CSV: ' + headers.join(' | '));
+    Logger.log('Columnas detectadas → Equipo:' + colEquipo + ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin + ' DiasSolicitados:' + colDiasSolicitados);
 
     const mapeoDirectores = obtenerMapeoDirectores();
     const plantilla       = obtenerPlantillaEmpleados();
@@ -636,8 +637,49 @@ function procesarDatos(datosCSV) {
 }
 
 /**
+ * Parsea una fecha en múltiples formatos:
+ *  - YYYY-MM-DD  (ISO — más común en KoboToolbox)
+ *  - DD/MM/YYYY  (formato guatemalteco)
+ *  - DD-MM-YYYY
+ * Retorna un objeto Date o null si no puede parsear.
+ */
+function parsearFecha(fechaStr) {
+  if (!fechaStr || fechaStr.toString().trim() === '') return null;
+  var str = fechaStr.toString().trim();
+
+  // 1. Intentar ISO / formato nativo de JS (YYYY-MM-DD o YYYY-MM-DDTHH:MM:SS)
+  var partes = str.split('-');
+  if (partes.length === 3 && partes[0].length === 4) {
+    // YYYY-MM-DD[Thh:mm:ss]
+    var anio = parseInt(partes[0], 10);
+    var mes  = parseInt(partes[1], 10) - 1;
+    var dia  = parseInt(partes[2].substring(0, 2), 10);
+    var d = new Date(anio, mes, dia);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // 2. DD/MM/YYYY
+  partes = str.split('/');
+  if (partes.length === 3) {
+    var d = new Date(parseInt(partes[2], 10), parseInt(partes[1], 10) - 1, parseInt(partes[0], 10));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // 3. DD-MM-YYYY (día primero con guión)
+  partes = str.split('-');
+  if (partes.length === 3 && partes[0].length <= 2) {
+    var d = new Date(parseInt(partes[2], 10), parseInt(partes[1], 10) - 1, parseInt(partes[0], 10));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  Logger.log('No se pudo parsear la fecha: ' + str);
+  return null;
+}
+
+/**
  * Calcula los días totales entre dos fechas (incluyendo inicio y fin)
  * Retorna 1 si inicio = fin (un solo día)
+ * Soporta formatos: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY
  */
 function calcularDiasEntreFechas(fechaInicio, fechaFin) {
   try {
@@ -647,26 +689,23 @@ function calcularDiasEntreFechas(fechaInicio, fechaFin) {
       return 0;
     }
 
-    const inicio = new Date(fechaInicio);
-    const fin = new Date(fechaFin);
+    var inicio = parsearFecha(fechaInicio);
+    var fin    = parsearFecha(fechaFin);
 
-    if (isNaN(inicio.getTime()) || isNaN(fin.getTime())) {
+    if (!inicio || !fin) {
       Logger.log('Fechas inválidas: inicio=' + fechaInicio + ', fin=' + fechaFin);
       return 0;
     }
 
-    // Normalizar a medianoche para evitar problemas con horas
-    const inicioNorm = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
-    const finNorm = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
-
-    if (finNorm < inicioNorm) {
+    if (fin < inicio) {
       Logger.log('Fecha fin anterior a fecha inicio: inicio=' + fechaInicio + ', fin=' + fechaFin);
       return 0;
     }
 
     const unDia = 24 * 60 * 60 * 1000;
-    const dias = Math.round((finNorm - inicioNorm) / unDia) + 1;
+    const dias = Math.round((fin - inicio) / unDia) + 1;
 
+    Logger.log('Días calculados entre ' + fechaInicio + ' y ' + fechaFin + ': ' + dias);
     return dias;
 
   } catch (error) {
@@ -686,15 +725,10 @@ function calcularDiasHabiles(fechaInicio, fechaFin) {
       return 0;
     }
 
-    const inicio = new Date(fechaInicio);
-    const fin = new Date(fechaFin);
+    var inicioNorm = parsearFecha(fechaInicio);
+    var finNorm    = parsearFecha(fechaFin);
 
-    if (isNaN(inicio.getTime()) || isNaN(fin.getTime())) return 0;
-
-    // Normalizar a medianoche
-    const inicioNorm = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
-    const finNorm = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
-
+    if (!inicioNorm || !finNorm) return 0;
     if (finNorm < inicioNorm) return 0;
 
     let dias = 0;
@@ -760,8 +794,8 @@ function obtenerMapeoDirectores() {
  */
 function getSemestre(fechaStr) {
   if (!fechaStr || fechaStr.toString().trim() === '') return 1;
-  var d = new Date(fechaStr);
-  if (isNaN(d.getTime())) return 1;
+  var d = parsearFecha(fechaStr);
+  if (!d) return 1;
   return d.getMonth() < 6 ? 1 : 2;
 }
 
@@ -1272,15 +1306,35 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       return;
     }
 
-    // Construir mapa de saldos para búsqueda rápida
+    // Construir mapa de saldos para búsqueda rápida (con clave normalizada para mayor tolerancia)
     const saldoMap = {};
+    const saldoMapNorm = {};
     if (datosProcessados) {
-      datosProcessados.forEach(function(p) { saldoMap[p.nombre] = p; });
+      datosProcessados.forEach(function(p) {
+        saldoMap[p.nombre] = p;
+        saldoMapNorm[normalizarTexto(p.nombre)] = p;
+      });
+    }
+
+    // Busca el correo de un empleado tolerando diferencias de acentos/mayúsculas
+    function buscarCorreoEmpleado(nombre) {
+      // 1. Saldo del procesamiento actual
+      var s = saldoMap[nombre] || saldoMapNorm[normalizarTexto(nombre)];
+      if (s && s.correoEmpleado) return s.correoEmpleado;
+      // 2. CONFIG directo
+      if (CONFIG.CORREOS_EMPLEADOS[nombre]) return CONFIG.CORREOS_EMPLEADOS[nombre];
+      // 3. CONFIG con nombre normalizado
+      var nombNorm = normalizarTexto(nombre);
+      var encontrado = '';
+      Object.keys(CONFIG.CORREOS_EMPLEADOS).forEach(function(k) {
+        if (!encontrado && normalizarTexto(k) === nombNorm) encontrado = CONFIG.CORREOS_EMPLEADOS[k];
+      });
+      return encontrado;
     }
 
     const colFechaInicio   = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
-    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested']);
+    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested', 'd_as_personal', 'dia_personal', 'días personales', 'dias_de_personal', 'numero_de_dias', 'cuantos_dias', 'cuantos d', 'd_as_de_personal']);
     const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const mapeoDirectores  = obtenerMapeoDirectores();
 
@@ -1315,10 +1369,11 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
         return sum + d;
       }, 0);
 
-      var saldo        = saldoMap[nombreEmpleado] || null;
+      var saldo        = saldoMap[nombreEmpleado] || saldoMapNorm[normalizarTexto(nombreEmpleado)] || null;
       var infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
       var correoDir    = infoDirector.correo;
-      var correoEmp    = (saldo && saldo.correoEmpleado) ? saldo.correoEmpleado : (CONFIG.CORREOS_EMPLEADOS[nombreEmpleado] || '');
+      var correoEmp    = buscarCorreoEmpleado(nombreEmpleado);
+      Logger.log('Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir);
 
       // ── Correo al DIRECTOR ────────────────────────────────────────────────
       if (correoDir && correoDir.trim() !== '') {
