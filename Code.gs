@@ -436,15 +436,15 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
       const fechaIni = colFechaInicio >= 0 ? (registro[colFechaInicio] || '') : '';
       const fechaFi  = colFechaFin    >= 0 ? (registro[colFechaFin]    || '') : '';
-      // Prioridad: campo "Día personal solicitado" (lo que escribió el empleado)
-      // Respaldo: calcular por diferencia de fechas si el campo está vacío o es 0
+      // SOLO usar el número que el empleado escribió en "días solicitados"
+      // NO calcular desde fechas (las fechas siempre están mal en KoboToolbox)
       let diasSolicitados = 0;
       if (colDiasSolicitados >= 0) {
         const valDias = parseInt((registro[colDiasSolicitados] || '0').toString().trim(), 10);
         if (valDias > 0) diasSolicitados = valDias;
       }
       if (diasSolicitados === 0) {
-        diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
+        Logger.log('ADVERTENCIA: Días solicitados = 0 para registro (campo no encontrado o vacío). Nombre: ' + (extraerNombreDeFila(headers, registro) || 'Sin nombre'));
       }
 
       return [
@@ -540,15 +540,15 @@ function procesarDatos(datosCSV) {
       const conoceReglamento    = (colReglamento     >= 0 ? (fila[colReglamento]     || 'No especificado') : 'No especificado').toString().trim();
       const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
-      // Prioridad: campo "Día personal solicitado" (lo que escribió el empleado)
-      // Respaldo: calcular por diferencia de fechas si el campo está vacío o es 0
+      // SOLO usar el número que el empleado escribió en "días solicitados"
+      // NO calcular desde fechas (las fechas siempre están mal en KoboToolbox)
       let diasSolicitados = 0;
       if (colDiasSolicitados >= 0) {
         const valDias = parseInt((fila[colDiasSolicitados] || '0').toString().trim(), 10);
         if (valDias > 0) diasSolicitados = valDias;
       }
       if (diasSolicitados === 0) {
-        diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
+        Logger.log('ADVERTENCIA: Días solicitados = 0 para ' + nombre + '. Campo no encontrado o vacío.');
       }
 
       // Buscar el empleado en el map usando nombre normalizado (evita duplicados por acentos/mayúsculas)
@@ -1356,15 +1356,14 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var fechaFin       = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
 
       // Sumar días de TODOS los registros nuevos del empleado
+      // SOLO usar el número del campo "días solicitados" (NO calcular desde fechas)
       var diasEstaSolicitud = regs.reduce(function(sum, r) {
         var d = 0;
         if (colDiasSolicitados >= 0) {
           d = parseInt((r[colDiasSolicitados] || '0').toString().trim(), 10);
         }
         if (d === 0) {
-          var fi = colFechaInicio >= 0 ? (r[colFechaInicio] || '') : '';
-          var ff = colFechaFin    >= 0 ? (r[colFechaFin]    || '') : '';
-          d = calcularDiasEntreFechas(fi, ff);
+          Logger.log('ADVERTENCIA: Días = 0 para ' + nombreEmpleado + ' (campo "días solicitados" vacío o no encontrado)');
         }
         return sum + d;
       }, 0);
