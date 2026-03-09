@@ -91,7 +91,8 @@ const CONFIG = {
     'Jacqueline Paola Tello':                     'jacqueline@creamosguatemala.org',
     'Bruna España Bernal':                        'bruna@creamosguatemala.org',
     // Administración
-    'Carmen Lucía Carías González de Zacher':     'carmen@creamosguatemala.org'
+    'Carmen Lucía Carías González de Zacher':     'carmen@creamosguatemala.org',
+    'Hannah':                                     'hannah@creamosguatemala.org'
   }
 };
 
@@ -966,6 +967,35 @@ function buscarDirectorPorEquipo(mapeoDirectores, equipo) {
 }
 
 /**
+ * Detecta si un empleado es director de algún equipo.
+ * @param {string} nombreEmpleado - Nombre del empleado
+ * @param {Object} mapeoDirectores - Mapeo de equipos a directores
+ * @return {boolean} true si es director, false si no
+ */
+function esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores) {
+  if (!nombreEmpleado) return false;
+  var nombreNorm = normalizarTexto(nombreEmpleado);
+
+  // Buscar en el mapeo de directores
+  for (var equipo in mapeoDirectores) {
+    var director = mapeoDirectores[equipo];
+    if (director && director.nombre && normalizarTexto(director.nombre) === nombreNorm) {
+      return true;
+    }
+  }
+
+  // Buscar en CONFIG.DIRECTORES_DEFAULT como respaldo
+  for (var equipoDefault in CONFIG.DIRECTORES_DEFAULT) {
+    var directorDefault = CONFIG.DIRECTORES_DEFAULT[equipoDefault];
+    if (directorDefault && directorDefault.nombre && normalizarTexto(directorDefault.nombre) === nombreNorm) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extrae el nombre del empleado de las columnas de departamento del formulario.
  * El formulario KoboToolbox tiene una columna por cada equipo; el nombre del empleado
  * aparece en la columna de su equipo (el resto quedan vacías).
@@ -1372,7 +1402,11 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
       var correoDir    = infoDirector.correo;
       var correoEmp    = buscarCorreoEmpleado(nombreEmpleado);
-      Logger.log('Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir);
+
+      // Detectar si el empleado ES un director (cualquier equipo)
+      var esDirector = esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores);
+
+      Logger.log('Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirector: ' + esDirector);
 
       // ── Correo al DIRECTOR ────────────────────────────────────────────────
       if (correoDir && correoDir.trim() !== '') {
@@ -1386,8 +1420,15 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
           var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
           var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
 
-          MailApp.sendEmail({ to: correoDir.trim(), subject: asuntoDir, htmlBody: cuerpoDir });
-          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ') — ' + regs.length + ' registro(s) agrupado(s)');
+          // Si quien pide días ES un director → enviar copia a Hannah
+          var destinatarios = correoDir.trim();
+          if (esDirector && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
+            destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
+            Logger.log('El empleado es director → agregando copia a Hannah');
+          }
+
+          MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
+          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ') — ' + regs.length + ' registro(s) agrupado(s)' + (esDirector ? ' [con copia a Hannah]' : ''));
         } catch (errDir) {
           Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
         }
@@ -1900,6 +1941,7 @@ function onOpen() {
       .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
       .addItem('👥 Configurar Directores', 'crearHojaDirectores')
       .addItem('👤 Configurar Plantilla de Empleados', 'crearHojaPlantillaEmpleados')
+      .addItem('➕ Agregar Nuevo Empleado', 'agregarNuevoEmpleado')
       .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
@@ -1911,6 +1953,172 @@ function onOpen() {
     // onOpen fue llamada fuera del contexto del spreadsheet (ej: editor de Apps Script).
     // No hay nada que hacer; el menú solo existe cuando se abre el Sheet.
     Logger.log('onOpen: sin contexto de UI (' + e.message + ')');
+  }
+}
+
+/**
+ * Permite agregar un nuevo empleado de manera interactiva (sin modificar el código).
+ * Agrega el empleado a la hoja "Plantilla de Empleados" y actualiza el sistema.
+ */
+function agregarNuevoEmpleado() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+
+    // Solicitar nombre completo
+    const respuestaNombre = ui.prompt(
+      'Agregar Nuevo Empleado - Paso 1/3',
+      'Ingresa el NOMBRE COMPLETO del empleado:\n\n(Ejemplo: María José González López)',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (respuestaNombre.getSelectedButton() !== ui.Button.OK) {
+      ui.alert('Operación cancelada');
+      return;
+    }
+
+    const nombreEmpleado = respuestaNombre.getResponseText().trim();
+    if (!nombreEmpleado) {
+      ui.alert('❌ Error', 'Debes ingresar un nombre válido', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Solicitar equipo
+    const equiposDisponibles = CONFIG.EQUIPOS.join('\n- ');
+    const respuestaEquipo = ui.prompt(
+      'Agregar Nuevo Empleado - Paso 2/3',
+      'Selecciona el EQUIPO del empleado:\n\n' +
+      'Equipos disponibles:\n- ' + equiposDisponibles + '\n\n' +
+      'Ingresa el nombre del equipo (copia y pega para mayor precisión):',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (respuestaEquipo.getSelectedButton() !== ui.Button.OK) {
+      ui.alert('Operación cancelada');
+      return;
+    }
+
+    const equipoEmpleado = respuestaEquipo.getResponseText().trim();
+    if (!equipoEmpleado) {
+      ui.alert('❌ Error', 'Debes ingresar un equipo válido', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Validar que el equipo exista
+    const equipoNormalizado = normalizarTexto(equipoEmpleado);
+    const equipoValido = CONFIG.EQUIPOS.some(function(e) {
+      return normalizarTexto(e) === equipoNormalizado;
+    });
+
+    if (!equipoValido) {
+      ui.alert(
+        '❌ Error',
+        'El equipo "' + equipoEmpleado + '" no es válido.\n\n' +
+        'Equipos disponibles:\n- ' + equiposDisponibles,
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+
+    // Solicitar correo
+    const respuestaCorreo = ui.prompt(
+      'Agregar Nuevo Empleado - Paso 3/3',
+      'Ingresa el CORREO ELECTRÓNICO del empleado:\n\n' +
+      '(Ejemplo: ' + nombreEmpleado.split(' ')[0].toLowerCase() + '@creamosguatemala.org)',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (respuestaCorreo.getSelectedButton() !== ui.Button.OK) {
+      ui.alert('Operación cancelada');
+      return;
+    }
+
+    const correoEmpleado = respuestaCorreo.getResponseText().trim();
+    if (!correoEmpleado) {
+      ui.alert('❌ Error', 'Debes ingresar un correo válido', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Validar formato de correo
+    const regexCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!regexCorreo.test(correoEmpleado)) {
+      ui.alert('❌ Error', 'El correo "' + correoEmpleado + '" no tiene un formato válido', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Confirmar antes de agregar
+    const confirmacion = ui.alert(
+      'Confirmar Nuevo Empleado',
+      '¿Deseas agregar el siguiente empleado?\n\n' +
+      '• Nombre: ' + nombreEmpleado + '\n' +
+      '• Equipo: ' + equipoEmpleado + '\n' +
+      '• Correo: ' + correoEmpleado,
+      ui.ButtonSet.YES_NO
+    );
+
+    if (confirmacion !== ui.Button.YES) {
+      ui.alert('Operación cancelada');
+      return;
+    }
+
+    // Agregar empleado a la hoja "Plantilla de Empleados"
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+
+    // Si no existe la hoja, crearla primero
+    if (!sheet) {
+      crearHojaPlantillaEmpleados();
+      sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+    }
+
+    if (!sheet) {
+      ui.alert('❌ Error', 'No se pudo crear la hoja de plantilla de empleados', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Verificar que el empleado no exista ya
+    const ultimaFila = sheet.getLastRow();
+    if (ultimaFila > 2) {
+      const datosExistentes = sheet.getRange(3, 1, ultimaFila - 2, 3).getValues();
+      const yaExiste = datosExistentes.some(function(fila) {
+        return normalizarTexto(fila[0]) === normalizarTexto(nombreEmpleado);
+      });
+
+      if (yaExiste) {
+        ui.alert(
+          '⚠ Advertencia',
+          'El empleado "' + nombreEmpleado + '" ya existe en la plantilla.\n\n' +
+          'Si quieres modificar sus datos, edita la hoja "' + CONFIG.SHEET_NAME_PLANTILLA + '" directamente.',
+          ui.ButtonSet.OK
+        );
+        return;
+      }
+    }
+
+    // Agregar nueva fila
+    const nuevaFila = ultimaFila + 1;
+    sheet.getRange(nuevaFila, 1, 1, 3).setValues([[nombreEmpleado, equipoEmpleado, correoEmpleado]]);
+
+    // Formatear la nueva fila
+    sheet.getRange(nuevaFila, 1, 1, 3).setBorder(true, true, true, true, true, true);
+
+    Logger.log('Nuevo empleado agregado: ' + nombreEmpleado + ' | ' + equipoEmpleado + ' | ' + correoEmpleado);
+
+    ui.alert(
+      '✅ Empleado Agregado',
+      'El empleado "' + nombreEmpleado + '" fue agregado exitosamente.\n\n' +
+      '• Equipo: ' + equipoEmpleado + '\n' +
+      '• Correo: ' + correoEmpleado + '\n\n' +
+      'El sistema ya puede enviarle notificaciones cuando solicite días personales.',
+      ui.ButtonSet.OK
+    );
+
+  } catch (error) {
+    Logger.log('Error en agregarNuevoEmpleado: ' + error.message);
+    SpreadsheetApp.getUi().alert(
+      '❌ Error',
+      'Ocurrió un error al agregar el empleado:\n\n' + error.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
   }
 }
 
