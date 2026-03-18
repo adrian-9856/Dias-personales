@@ -508,10 +508,39 @@ function procesarDatos(datosCSV) {
     const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
     const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
     const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
-    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested', 'd_as_personal', 'dia_personal', 'días personales', 'dias_de_personal', 'numero_de_dias', 'cuantos_dias', 'cuantos d', 'd_as_de_personal']);
+    const colDiasSolicitados = encontrarColumna(headers, [
+      'personal solicitado',
+      'dias_personal',
+      'days_requested',
+      'd_as_personal',
+      'dia_personal',
+      'días personales',
+      'dias_de_personal',
+      'numero_de_dias',
+      'cuantos_dias',
+      'cuantos d',
+      'd_as_de_personal',
+      'dias solicitados',
+      'dias',
+      'cuantos dias',
+      'cantidad de dias',
+      'numero dias',
+      'dias a tomar',
+      'personal_solicitado'
+    ]);
 
-    Logger.log('Encabezados CSV: ' + headers.join(' | '));
-    Logger.log('Columnas detectadas → Equipo:' + colEquipo + ' FechaInicio:' + colFechaInicio + ' FechaFin:' + colFechaFin + ' DiasSolicitados:' + colDiasSolicitados);
+    Logger.log('═══════════════════════════════════');
+    Logger.log('📋 ENCABEZADOS CSV COMPLETOS:');
+    headers.forEach(function(h, i) {
+      Logger.log('  [' + i + '] ' + h);
+    });
+    Logger.log('═══════════════════════════════════');
+    Logger.log('Columnas detectadas:');
+    Logger.log('  • Equipo: ' + (colEquipo >= 0 ? colEquipo + ' ("' + headers[colEquipo] + '")' : 'NO ENCONTRADA'));
+    Logger.log('  • FechaInicio: ' + (colFechaInicio >= 0 ? colFechaInicio + ' ("' + headers[colFechaInicio] + '")' : 'NO ENCONTRADA'));
+    Logger.log('  • FechaFin: ' + (colFechaFin >= 0 ? colFechaFin + ' ("' + headers[colFechaFin] + '")' : 'NO ENCONTRADA'));
+    Logger.log('  • DiasSolicitados: ' + (colDiasSolicitados >= 0 ? colDiasSolicitados + ' ("' + headers[colDiasSolicitados] + '")' : '⚠️ NO ENCONTRADA'));
+    Logger.log('═══════════════════════════════════');
 
     const mapeoDirectores = obtenerMapeoDirectores();
     const plantilla       = obtenerPlantillaEmpleados();
@@ -543,15 +572,27 @@ function procesarDatos(datosCSV) {
       const conoceReglamento    = (colReglamento     >= 0 ? (fila[colReglamento]     || 'No especificado') : 'No especificado').toString().trim();
       const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
-      // SOLO usar el número que el empleado escribió en "días solicitados"
-      // NO calcular desde fechas (las fechas siempre están mal en KoboToolbox)
+      // ═══════════════════════════════════════════════════════════════
+      // ⚠️ IMPORTANTE: SOLO usar el número que el empleado escribió
+      // NO calcular desde fechas (las fechas son solo informativas)
+      // ═══════════════════════════════════════════════════════════════
       let diasSolicitados = 0;
       if (colDiasSolicitados >= 0) {
         const valDias = parseInt((fila[colDiasSolicitados] || '0').toString().trim(), 10);
-        if (valDias > 0) diasSolicitados = valDias;
+        if (valDias > 0) {
+          diasSolicitados = valDias;
+          Logger.log('✅ ' + nombre + ': ' + diasSolicitados + ' día(s) solicitado(s) (del campo "' + headers[colDiasSolicitados] + '")');
+        }
       }
+
       if (diasSolicitados === 0) {
-        Logger.log('ADVERTENCIA: Días solicitados = 0 para ' + nombre + '. Campo no encontrado o vacío.');
+        if (colDiasSolicitados < 0) {
+          Logger.log('❌ ERROR: NO se encontró la columna de "días solicitados" en el CSV para ' + nombre);
+          Logger.log('   Nombres buscados: personal solicitado, dias_personal, dias solicitados, etc.');
+          Logger.log('   Verifica que el formulario de KoboToolbox tenga este campo.');
+        } else {
+          Logger.log('⚠️ ADVERTENCIA: ' + nombre + ' - Campo "días solicitados" está vacío o = 0');
+        }
       }
 
       // Buscar el empleado en el map usando nombre normalizado (evita duplicados por acentos/mayúsculas)
@@ -640,7 +681,11 @@ function procesarDatos(datosCSV) {
 }
 
 /**
- * Parsea una fecha en múltiples formatos:
+ * Parsea una fecha en múltiples formatos.
+ * SOLO se usa para determinar el semestre (1=Ene-Jun, 2=Jul-Dic).
+ * NO se usa para calcular días (se usa el número del formulario).
+ *
+ * Formatos soportados:
  *  - YYYY-MM-DD  (ISO — más común en KoboToolbox)
  *  - DD/MM/YYYY  (formato guatemalteco)
  *  - DD-MM-YYYY
@@ -680,78 +725,10 @@ function parsearFecha(fechaStr) {
 }
 
 /**
- * Calcula los días totales entre dos fechas (incluyendo inicio y fin)
- * Retorna 1 si inicio = fin (un solo día)
- * Soporta formatos: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY
+ * NOTA: Las fechas en el formulario son solo informativas.
+ * El sistema usa únicamente el número que el empleado escribe en "días solicitados".
+ * Las funciones de cálculo de días desde fechas fueron eliminadas (no se usaban).
  */
-function calcularDiasEntreFechas(fechaInicio, fechaFin) {
-  try {
-    if (!fechaInicio || !fechaFin ||
-        fechaInicio.toString().trim() === '' ||
-        fechaFin.toString().trim() === '') {
-      return 0;
-    }
-
-    var inicio = parsearFecha(fechaInicio);
-    var fin    = parsearFecha(fechaFin);
-
-    if (!inicio || !fin) {
-      Logger.log('Fechas inválidas: inicio=' + fechaInicio + ', fin=' + fechaFin);
-      return 0;
-    }
-
-    if (fin < inicio) {
-      Logger.log('Fecha fin anterior a fecha inicio: inicio=' + fechaInicio + ', fin=' + fechaFin);
-      return 0;
-    }
-
-    const unDia = 24 * 60 * 60 * 1000;
-    const dias = Math.round((fin - inicio) / unDia) + 1;
-
-    Logger.log('Días calculados entre ' + fechaInicio + ' y ' + fechaFin + ': ' + dias);
-    return dias;
-
-  } catch (error) {
-    Logger.log('Error en calcularDiasEntreFechas: ' + error.message);
-    return 0;
-  }
-}
-
-/**
- * Calcula días hábiles (excluyendo fines de semana)
- */
-function calcularDiasHabiles(fechaInicio, fechaFin) {
-  try {
-    if (!fechaInicio || !fechaFin ||
-        fechaInicio.toString().trim() === '' ||
-        fechaFin.toString().trim() === '') {
-      return 0;
-    }
-
-    var inicioNorm = parsearFecha(fechaInicio);
-    var finNorm    = parsearFecha(fechaFin);
-
-    if (!inicioNorm || !finNorm) return 0;
-    if (finNorm < inicioNorm) return 0;
-
-    let dias = 0;
-    const fecha = new Date(inicioNorm);
-
-    while (fecha <= finNorm) {
-      const diaSemana = fecha.getDay();
-      if (diaSemana !== 0 && diaSemana !== 6) { // 0=domingo, 6=sábado
-        dias++;
-      }
-      fecha.setDate(fecha.getDate() + 1);
-    }
-
-    return dias;
-
-  } catch (error) {
-    Logger.log('Error en calcularDiasHabiles: ' + error.message);
-    return 0;
-  }
-}
 
 /**
  * Obtiene el mapeo de equipos a directores desde la hoja de directores
