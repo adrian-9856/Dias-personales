@@ -315,9 +315,11 @@ function obtenerDatosKoboToolbox() {
     }
 
     if (responseCode !== 200) {
-      // Errores de servidor temporal (502, 503, 504): solo registrar, NO enviar correo
-      var errConexion = new Error('Error al conectar con KoboToolbox. Código HTTP: ' + responseCode + '. Verifica tu token y URL.');
-      errConexion.esErrorServidor = (responseCode === 502 || responseCode === 503 || responseCode === 504);
+      // Errores de servidor temporal (502, 503, 504): SIEMPRE marcar como error de servidor
+      // Estos errores NO deben enviar correo porque son temporales de KoboToolbox
+      var errConexion = new Error('KoboToolbox temporalmente no disponible (HTTP ' + responseCode + '). El sistema reintentará automáticamente.');
+      errConexion.esErrorServidor = true; // SIEMPRE true para errores HTTP 5xx
+      errConexion.codigoHTTP = responseCode;
       throw errConexion;
     }
 
@@ -1624,16 +1626,18 @@ function construirCorreoEmpleado(nombre, fechaIni, fechaFin, diasSolicitud, sald
 
 /**
  * Envía correo de error al administrador.
- * Rate limit: máximo 1 correo de error cada 2 horas para evitar inundación.
+ * Rate limit: máximo 1 correo de error cada 24 horas para evitar inundación.
+ * Los errores temporales de servidor (5xx) NO envían correo.
  */
 function enviarCorreoError(error) {
   try {
-    // ── Rate limiting: un correo de error máximo cada 2 horas ────────────────
+    // ── Rate limiting: un correo de error máximo cada 24 horas ────────────────
     var props = PropertiesService.getScriptProperties();
     var ultimoEnvio = parseInt(props.getProperty('ULTIMO_CORREO_ERROR') || '0', 10);
     var ahora = Date.now();
-    if (ahora - ultimoEnvio < 7200000) { // 2 horas en milisegundos
-      Logger.log('Correo de error omitido (cooldown 2h activo). Error: ' + error.message);
+    var COOLDOWN = 86400000; // 24 horas en milisegundos
+    if (ahora - ultimoEnvio < COOLDOWN) {
+      Logger.log('Correo de error omitido (cooldown 24h activo). Error: ' + error.message);
       return;
     }
     props.setProperty('ULTIMO_CORREO_ERROR', String(ahora));
@@ -1647,13 +1651,38 @@ function enviarCorreoError(error) {
 
     if (!correoAdmin || correoAdmin.toString().trim() === '') return;
 
+    // Determinar tipo de error para dar contexto
+    var tipoError = '⚠️ Error del Sistema';
+    var solucion = 'Verifica la configuración del sistema.';
+
+    if (error.message.indexOf('Token') >= 0) {
+      tipoError = '🔑 Error de Token';
+      solucion = 'Solución: Ve a la hoja "Configuración" y verifica que el Token de KoboToolbox sea válido.';
+    } else if (error.message.indexOf('URL') >= 0) {
+      tipoError = '🔗 Error de URL';
+      solucion = 'Solución: Ve a la hoja "Configuración" y verifica que la URL de la API sea correcta.';
+    } else if (error.codigoHTTP) {
+      tipoError = '🌐 Error HTTP ' + error.codigoHTTP;
+      if (error.codigoHTTP >= 500) {
+        solucion = 'Este es un error temporal de KoboToolbox. El sistema reintentará automáticamente.';
+      }
+    }
+
     MailApp.sendEmail({
       to: correoAdmin.toString().trim(),
-      subject: 'Error en Sistema de Días Personales',
-      body: 'Se ha producido un error en el sistema:\n\nError: ' + error.message +
+      subject: 'Error en Sistema de Días Personales - ' + tipoError,
+      body: 'Se ha producido un error en el sistema:\n\n' +
+        '═══════════════════════════════════\n' +
+        'TIPO: ' + tipoError + '\n' +
+        '═══════════════════════════════════\n\n' +
+        'Error: ' + error.message +
         '\n\nStack: ' + (error.stack || 'No disponible') +
         '\n\nFecha: ' + new Date().toLocaleString('es-ES') +
-        '\n\nNOTA: Los errores repetidos se agrupan y solo se notifica una vez cada 2 horas.'
+        '\n\n' + solucion +
+        '\n\n═══════════════════════════════════\n' +
+        'NOTA: Los errores repetidos se agrupan y solo recibirás 1 correo cada 24 horas.\n' +
+        'Si el problema persiste, contacta al administrador del sistema.\n' +
+        '═══════════════════════════════════'
     });
 
   } catch (e) {
@@ -1943,6 +1972,7 @@ function onOpen() {
       .addItem('👤 Configurar Plantilla de Empleados', 'crearHojaPlantillaEmpleados')
       .addItem('➕ Agregar Nuevo Empleado', 'agregarNuevoEmpleado')
       .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
+      .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
       .addSeparator()
@@ -2446,6 +2476,56 @@ function configurarTriggerAutomatico() {
       'Puedes ver y gestionar los triggers en: Extensiones > Apps Script > Triggers (ícono del reloj)',
       ui.ButtonSet.OK
     );
+  }
+}
+
+/**
+ * Desactiva todos los triggers automáticos del sistema.
+ * Útil para detener las ejecuciones automáticas si están causando problemas.
+ */
+function desactivarTriggersAutomaticos() {
+  const ui = SpreadsheetApp.getUi();
+
+  const respuesta = ui.alert(
+    'Desactivar Ejecución Automática',
+    '¿Deseas desactivar TODOS los triggers automáticos del sistema?\n\n' +
+    'Esto detendrá las verificaciones automáticas de nuevos registros.\n' +
+    'Podrás usar el webhook o ejecutar el sistema manualmente desde el menú.',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (respuesta === ui.Button.YES) {
+    try {
+      // Eliminar TODOS los triggers del proyecto
+      const triggers = ScriptApp.getProjectTriggers();
+      let count = 0;
+
+      triggers.forEach(function(trigger) {
+        ScriptApp.deleteTrigger(trigger);
+        count++;
+      });
+
+      ui.alert(
+        '✅ Triggers Desactivados',
+        'Se eliminaron ' + count + ' trigger(s) automático(s).\n\n' +
+        'El sistema ya NO se ejecutará automáticamente.\n\n' +
+        'Puedes:\n' +
+        '• Usar el webhook de KoboToolbox para ejecución instantánea\n' +
+        '• Ejecutar manualmente desde el menú "Buscar Nuevos Registros"\n' +
+        '• Reactivar los triggers con "Configurar Trigger Automático"',
+        ui.ButtonSet.OK
+      );
+
+      Logger.log('Todos los triggers fueron eliminados exitosamente (' + count + ' trigger(s))');
+
+    } catch (error) {
+      ui.alert(
+        '❌ Error',
+        'No se pudieron eliminar los triggers:\n\n' + error.message,
+        ui.ButtonSet.OK
+      );
+      Logger.log('Error al eliminar triggers: ' + error.message);
+    }
   }
 }
 
