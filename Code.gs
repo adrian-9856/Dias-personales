@@ -42,16 +42,17 @@ const CONFIG = {
   ],
 
   // Directores por equipo [nombre, correo]
+  // NOTA: El correo es quien RECIBE las notificaciones (puede ser diferente del director del equipo)
   DIRECTORES_DEFAULT: {
-    'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',        correo: 'melissa@creamosguatemala.org' },
-    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Argueta',        correo: 'melissa@creamosguatemala.org' },
-    'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',   correo: 'renato@creamosguatemala.org' },
-    'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',correo: 'stephany@creamosguatemala.org' },
-    'Gestión de Impacto':        { nombre: 'Eneko Arberas García',              correo: 'eneko@creamosguatemala.org' },
-    'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',      correo: 'rossana@creamosguatemala.org' },
-    'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher', correo: 'carmen@creamosguatemala.org' },
-    'Administración':            { nombre: 'Hannah',                                  correo: 'hannah@creamosguatemala.org' },
-    'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',    correo: 'alejandra@creamosguatemala.org' }
+    'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',               correo: 'stephany@creamosguatemala.org' },
+    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Argueta',               correo: 'stephany@creamosguatemala.org' },
+    'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',          correo: 'felix@creamosguatemala.org' },
+    'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'hannah@creamosguatemala.org' },
+    'Gestión de Impacto':        { nombre: 'Eneko Arberas García',                     correo: 'hannah@creamosguatemala.org' },
+    'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',             correo: 'stephany@creamosguatemala.org' },
+    'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'hannah@creamosguatemala.org' },
+    'Administración':            { nombre: 'Hannah',                                   correo: 'hannah@creamosguatemala.org' },
+    'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',           correo: 'stephany@creamosguatemala.org' }
   },
 
   // Correos de empleados (nombre completo → correo)
