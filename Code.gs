@@ -428,7 +428,15 @@ function agregarAlHistorial(registrosNuevos, headers) {
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
-    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested', 'd_as_personal', 'dia_personal', 'días personales', 'dias_de_personal', 'numero_de_dias', 'cuantos_dias', 'cuantos d', 'd_as_de_personal']);
+    const colDiasSolicitados = encontrarColumna(headers, [
+      'día personal solicitado', 'dia personal solicitado',
+      'numero de dias solicitados', 'número de días solicitados',
+      'personal solicitado', 'dias_personal', 'days_requested',
+      'd_as_personal', 'dia_personal', 'dias_de_personal',
+      'numero_de_dias', 'cuantos_dias', 'd_as_de_personal',
+      'dias solicitados', 'cuantos dias', 'cantidad de dias',
+      'numero dias', 'dias a tomar', 'personal_solicitado'
+    ]);
 
     const ultimaFila = sheet.getLastRow() + 1;
     const fechaProceso = new Date();
@@ -1350,7 +1358,15 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
 
     const colFechaInicio   = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
     const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
-    const colDiasSolicitados = encontrarColumna(headers, ['personal solicitado', 'dias_personal', 'days_requested', 'd_as_personal', 'dia_personal', 'días personales', 'dias_de_personal', 'numero_de_dias', 'cuantos_dias', 'cuantos d', 'd_as_de_personal']);
+    const colDiasSolicitados = encontrarColumna(headers, [
+      'día personal solicitado', 'dia personal solicitado',
+      'numero de dias solicitados', 'número de días solicitados',
+      'personal solicitado', 'dias_personal', 'days_requested',
+      'd_as_personal', 'dia_personal', 'dias_de_personal',
+      'numero_de_dias', 'cuantos_dias', 'd_as_de_personal',
+      'dias solicitados', 'cuantos dias', 'cantidad de dias',
+      'numero dias', 'dias a tomar', 'personal_solicitado'
+    ]);
     const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
     const mapeoDirectores  = obtenerMapeoDirectores();
 
