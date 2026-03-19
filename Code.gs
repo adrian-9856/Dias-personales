@@ -2226,8 +2226,15 @@ function instalarTodo() {
 
     // Eliminar hojas del sistema para empezar limpio (excepto Historial)
     hojasABorrar.forEach(function(nombre) {
-      const hoja = ss.getSheetByName(nombre);
-      if (hoja) ss.deleteSheet(hoja);
+      try {
+        const hoja = ss.getSheetByName(nombre);
+        if (hoja) {
+          ss.deleteSheet(hoja);
+          Logger.log('✅ Hoja eliminada: ' + nombre);
+        }
+      } catch (e) {
+        Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
+      }
     });
 
     // ── 2. Eliminar triggers anteriores ──────────────────────────────────────
@@ -2309,10 +2316,10 @@ function reinstalarSistema() {
     'Esto eliminará y recreará las siguientes hojas:\n\n' +
     '  • ' + CONFIG.SHEET_NAME_CONFIG + '\n' +
     '  • ' + CONFIG.SHEET_NAME_DIRECTORES + '\n' +
+    '  • ' + CONFIG.SHEET_NAME_PLANTILLA + '\n' +
     '  • ' + CONFIG.SHEET_NAME_DATOS + '\n' +
     '  • ' + CONFIG.SHEET_NAME_RESUMEN + '\n\n' +
     '✅ El Historial de correos enviados se conservará para no reenviar notificaciones.\n\n' +
-    '¿Deseas continuar?',
     '¿Deseas continuar?',
     ui.ButtonSet.YES_NO
   );
@@ -2347,12 +2354,18 @@ function reinstalarSistema() {
       hojaTemporal = ss2.insertSheet('_temporal_');
     }
 
-    // Eliminar hojas del sistema
+    // Eliminar hojas del sistema (try/catch individual para que si una falla, siga con las demás)
     hojasASistema.forEach(function(nombre) {
-      const hoja = ss2.getSheetByName(nombre);
-      if (hoja) {
-        ss2.deleteSheet(hoja);
-        Logger.log('Hoja eliminada: ' + nombre);
+      try {
+        const hoja = ss2.getSheetByName(nombre);
+        if (hoja) {
+          ss2.deleteSheet(hoja);
+          Logger.log('✅ Hoja eliminada: ' + nombre);
+        } else {
+          Logger.log('ℹ️ Hoja no encontrada (ya no existe): ' + nombre);
+        }
+      } catch (e) {
+        Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
       }
     });
 
