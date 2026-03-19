@@ -510,6 +510,10 @@ function procesarDatos(datosCSV) {
     const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
     const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
     const colDiasSolicitados = encontrarColumna(headers, [
+      'numero de dias solicitados',     // ✅ Nombre exacto de KoboToolbox
+      'número de días solicitados',     // Con tildes
+      'Numero de dias solicitados',     // Con mayúscula inicial
+      'Número de días solicitados',     // Con mayúscula y tildes
       'personal solicitado',
       'dias_personal',
       'days_requested',
