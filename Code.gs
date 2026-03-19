@@ -1976,7 +1976,10 @@ function onOpen() {
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
       .addSeparator()
+      .addItem('✅ INSTALAR TODO DESDE CERO', 'instalarTodoDesdeAmbienteLimpio')
+      .addItem('❌ DESINSTALAR TODO', 'desinstalarTodoElSistema')
       .addItem('🔁 Reinstalar Sistema Completo', 'reinstalarSistema')
+      .addSeparator()
       .addItem('ℹ Ayuda', 'mostrarAyuda')
       .addToUi();
   } catch (e) {
