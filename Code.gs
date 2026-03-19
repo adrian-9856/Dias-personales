@@ -510,28 +510,27 @@ function procesarDatos(datosCSV) {
     const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
     const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
     const colDiasSolicitados = encontrarColumna(headers, [
-      'numero de dias solicitados',     // ✅ Nombre exacto de KoboToolbox
+      // ✅ Nombres EXACTOS de KoboToolbox (más específicos primero)
+      'día personal solicitado',        // Nombre exacto del formulario (con tilde)
+      'dia personal solicitado',        // Sin tilde
+      'numero de dias solicitados',     // Alternativa
       'número de días solicitados',     // Con tildes
-      'Numero de dias solicitados',     // Con mayúscula inicial
-      'Número de días solicitados',     // Con mayúscula y tildes
-      'personal solicitado',
+      'personal solicitado',            // Parcial específico
       'dias_personal',
       'days_requested',
       'd_as_personal',
       'dia_personal',
-      'días personales',
       'dias_de_personal',
       'numero_de_dias',
       'cuantos_dias',
-      'cuantos d',
       'd_as_de_personal',
       'dias solicitados',
-      'dias',
       'cuantos dias',
       'cantidad de dias',
       'numero dias',
       'dias a tomar',
       'personal_solicitado'
+      // NOTA: NO incluir 'dias' solo, porque coincide con "reglamento de días Personales"
     ]);
 
     Logger.log('═══════════════════════════════════');
@@ -915,10 +914,13 @@ function obtenerPlantillaEmpleados() {
  * Retorna 0 si no encuentra coincidencia (primera columna como fallback)
  */
 function encontrarColumna(headers, palabrasClave) {
-  for (let i = 0; i < headers.length; i++) {
-    const header = headers[i].toString().toLowerCase().trim();
-    for (let j = 0; j < palabrasClave.length; j++) {
-      if (header.includes(palabrasClave[j].toLowerCase())) {
+  // Iterar keywords primero (por prioridad), luego headers
+  // Así el keyword más específico se busca en TODOS los headers antes de probar keywords genéricos
+  for (let j = 0; j < palabrasClave.length; j++) {
+    var keyword = palabrasClave[j].toLowerCase();
+    for (let i = 0; i < headers.length; i++) {
+      var header = headers[i].toString().toLowerCase().trim();
+      if (header.includes(keyword)) {
         return i;
       }
     }
@@ -2236,6 +2238,7 @@ function instalarTodo() {
         Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
       }
     });
+    SpreadsheetApp.flush(); // Asegurar que las eliminaciones se apliquen antes de continuar
 
     // ── 2. Eliminar triggers anteriores ──────────────────────────────────────
     ScriptApp.getProjectTriggers().forEach(function(t) {
@@ -2243,8 +2246,9 @@ function instalarTodo() {
     });
 
     // ── 3. Crear hoja de Configuración y rellenar valores automáticamente ────
-    toast('Paso 2/6 — Creando configuración...');
+    toast('Paso 2/5 — Creando configuración...');
     crearHojaConfiguracion();
+    SpreadsheetApp.flush();
 
     const sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
     if (sheetConfig) {
@@ -2257,9 +2261,11 @@ function instalarTodo() {
     }
 
     // ── 4. Crear hojas de Directores y Plantilla de Empleados ────────────────
-    toast('Paso 3/6 — Configurando directores y empleados...');
+    toast('Paso 3/5 — Configurando directores y empleados...');
     crearHojaDirectores();
+    SpreadsheetApp.flush();
     crearHojaPlantillaEmpleados();
+    SpreadsheetApp.flush();
 
     // ── 5. Crear hojas vacías para Datos, Resumen e Historial ────────────────
     [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
@@ -2268,25 +2274,23 @@ function instalarTodo() {
 
     // Eliminar hoja temporal si se creó
     if (hojaTemporal) ss.deleteSheet(hojaTemporal);
+    SpreadsheetApp.flush();
 
     // ── 6. Configurar trigger automático (cada 1 minuto) ─────────────────────
-    toast('Paso 4/6 — Activando trigger automático...');
+    toast('Paso 4/5 — Activando trigger automático...');
     ScriptApp.newTrigger('ejecutarAutomatico')
       .timeBased()
       .everyMinutes(1)
       .create();
 
-    // ── 7. Primera sincronización de datos ───────────────────────────────────
-    toast('Paso 5/6 — Sincronizando datos con KoboToolbox...');
-    ejecutarSistema();
-
-    // ── 8. Activar la hoja Resumen para que el usuario la vea ────────────────
-    toast('Paso 6/6 — Listo.');
+    // NO ejecutar sincronización automática aquí para evitar timeout
+    // El trigger lo hará en 1 minuto, o el usuario puede hacerlo manualmente
+    toast('Paso 5/5 — Listo.');
     const hojaResumen = ss.getSheetByName(CONFIG.SHEET_NAME_RESUMEN);
     if (hojaResumen) ss.setActiveSheet(hojaResumen);
 
     Logger.log('instalarTodo completado exitosamente');
-    ss.toast('Sistema instalado y funcionando. El trigger revisa datos cada 1 minuto.', '✅ Instalación completa', 15);
+    ss.toast('Sistema instalado. Usa "Buscar Nuevos Registros" para sincronizar datos.', '✅ Instalación completa', 15);
 
   } catch (error) {
     Logger.log('Error en instalarTodo: ' + error.message);
@@ -2368,6 +2372,7 @@ function reinstalarSistema() {
         Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
       }
     });
+    SpreadsheetApp.flush(); // Asegurar que las eliminaciones se apliquen
 
     // ── PASO 2: Eliminar triggers anteriores ─────────────────────────────────
     const triggers = ScriptApp.getProjectTriggers();
@@ -2380,10 +2385,13 @@ function reinstalarSistema() {
 
     // ── PASO 3: Recrear hoja de Configuración ────────────────────────────────
     crearHojaConfiguracion();
+    SpreadsheetApp.flush();
 
     // ── PASO 4: Recrear hoja de Directores y Plantilla de Empleados ──────────
     crearHojaDirectores();
+    SpreadsheetApp.flush();
     crearHojaPlantillaEmpleados();
+    SpreadsheetApp.flush();
 
     // ── PASO 5: Crear hojas vacías para Datos y Resumen (Historial se conserva) ─────────
     [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN].forEach(function(nombre) {
@@ -2397,6 +2405,7 @@ function reinstalarSistema() {
     if (hojaTemporal) {
       ss2.deleteSheet(hojaTemporal);
     }
+    SpreadsheetApp.flush();
 
     // ── PASO 7: Configurar trigger automático ─────────────────────────────────
     ScriptApp.newTrigger('ejecutarAutomatico')
