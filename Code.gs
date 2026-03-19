@@ -448,15 +448,31 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
       const fechaIni = colFechaInicio >= 0 ? (registro[colFechaInicio] || '') : '';
       const fechaFi  = colFechaFin    >= 0 ? (registro[colFechaFin]    || '') : '';
-      // SOLO usar el número que el empleado escribió en "días solicitados"
-      // NO calcular desde fechas (las fechas siempre están mal en KoboToolbox)
+      // 1. PRIMERO: Intentar usar el número que el empleado escribió en "días solicitados"
       let diasSolicitados = 0;
       if (colDiasSolicitados >= 0) {
         const valDias = parseInt((registro[colDiasSolicitados] || '0').toString().trim(), 10);
         if (valDias > 0) diasSolicitados = valDias;
       }
+
+      // 2. FALLBACK: Si no existe el campo o está vacío, CALCULAR desde las fechas
+      if (diasSolicitados === 0 && fechaIni && fechaFi) {
+        try {
+          const fechaInicio = new Date(fechaIni);
+          const fechaFin = new Date(fechaFi);
+          if (!isNaN(fechaInicio.getTime()) && !isNaN(fechaFin.getTime())) {
+            const milisegundosPorDia = 1000 * 60 * 60 * 24;
+            const diferenciaDias = Math.round((fechaFin - fechaInicio) / milisegundosPorDia);
+            diasSolicitados = diferenciaDias + 1; // +1 para incluir el día de inicio
+            Logger.log('✅ Días calculados desde fechas: ' + diasSolicitados + ' (del ' + fechaIni + ' al ' + fechaFi + ')');
+          }
+        } catch (e) {
+          Logger.log('⚠️ Error al calcular días desde fechas: ' + e.message);
+        }
+      }
+
       if (diasSolicitados === 0) {
-        Logger.log('ADVERTENCIA: Días solicitados = 0 para registro (campo no encontrado o vacío). Nombre: ' + (extraerNombreDeFila(headers, registro) || 'Sin nombre'));
+        Logger.log('ADVERTENCIA: Días solicitados = 0 para registro (campo no encontrado y fechas inválidas). Nombre: ' + (extraerNombreDeFila(headers, registro) || 'Sin nombre'));
       }
 
       return [
@@ -585,8 +601,9 @@ function procesarDatos(datosCSV) {
       const tieneConsentimiento = (colConsentimiento >= 0 ? (fila[colConsentimiento] || 'No especificado') : 'No especificado').toString().trim();
 
       // ═══════════════════════════════════════════════════════════════
-      // ⚠️ IMPORTANTE: SOLO usar el número que el empleado escribió
-      // NO calcular desde fechas (las fechas son solo informativas)
+      // ⚠️ IMPORTANTE:
+      // 1. PRIMERO usar el número que el empleado escribió
+      // 2. FALLBACK: Si no existe, calcular desde fechas
       // ═══════════════════════════════════════════════════════════════
       let diasSolicitados = 0;
       if (colDiasSolicitados >= 0) {
@@ -597,13 +614,29 @@ function procesarDatos(datosCSV) {
         }
       }
 
+      // FALLBACK: Si el campo no existe o está vacío, CALCULAR desde fechas
+      if (diasSolicitados === 0 && fechaInicio && fechaFin) {
+        try {
+          const fechaIni = new Date(fechaInicio);
+          const fechaFi = new Date(fechaFin);
+          if (!isNaN(fechaIni.getTime()) && !isNaN(fechaFi.getTime())) {
+            const milisegundosPorDia = 1000 * 60 * 60 * 24;
+            const diferenciaDias = Math.round((fechaFi - fechaIni) / milisegundosPorDia);
+            diasSolicitados = diferenciaDias + 1; // +1 para incluir el día de inicio
+            Logger.log('✅ ' + nombre + ': ' + diasSolicitados + ' día(s) CALCULADOS desde fechas (' + fechaInicio + ' al ' + fechaFin + ')');
+          }
+        } catch (e) {
+          Logger.log('⚠️ Error al calcular días desde fechas para ' + nombre + ': ' + e.message);
+        }
+      }
+
       if (diasSolicitados === 0) {
         if (colDiasSolicitados < 0) {
-          Logger.log('❌ ERROR: NO se encontró la columna de "días solicitados" en el CSV para ' + nombre);
+          Logger.log('❌ ERROR: NO se encontró la columna de "días solicitados" y las fechas son inválidas para ' + nombre);
           Logger.log('   Nombres buscados: personal solicitado, dias_personal, dias solicitados, etc.');
-          Logger.log('   Verifica que el formulario de KoboToolbox tenga este campo.');
+          Logger.log('   Verifica que el formulario de KoboToolbox tenga este campo o fechas válidas.');
         } else {
-          Logger.log('⚠️ ADVERTENCIA: ' + nombre + ' - Campo "días solicitados" está vacío o = 0');
+          Logger.log('⚠️ ADVERTENCIA: ' + nombre + ' - Campo "días solicitados" vacío y fechas inválidas');
         }
       }
 
