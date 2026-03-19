@@ -451,11 +451,19 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
     // Identificar columnas relevantes del formulario
     const idIndex = encontrarColumna(headers, ['_id', '_uuid', 'uuid', 'submission_id', 'id']);
-    const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
-    const colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
-    const colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
+    const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento', 'programa/', 'departamento/']);
+    const colFechaInicio = encontrarColumna(headers, [
+      'fecha_inicio', 'fecha_de_inicio', 'fecha de inicio',  // ← Con espacios
+      'start_date', 'inicio', 'fecha inicio'
+    ]);
+    const colFechaFin = encontrarColumna(headers, [
+      'fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin',
+      'fecha de finalizacion', 'fecha de finalización',  // ← Con espacios y tilde
+      'end_date', 'fin', 'fecha fin'
+    ]);
     const colDiasSolicitados = encontrarColumna(headers, [
       'día personal solicitado', 'dia personal solicitado',
+      'día personal solicitado_uuid', 'dia personal solicitado_uuid',  // ← Con _uuid
       'numero de dias solicitados', 'número de días solicitados',
       'personal solicitado', 'dias_personal', 'days_requested',
       'd_as_personal', 'dia_personal', 'dias_de_personal',
@@ -546,15 +554,24 @@ function procesarDatos(datosCSV) {
 
     escribirDatosKobo(datosCSV);
 
-    const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
-    const colFechaInicio   = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
-    const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
-    const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento']);
-    const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent']);
+    const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento', 'programa/', 'departamento/']);
+    const colFechaInicio   = encontrarColumna(headers, [
+      'fecha_inicio', 'fecha_de_inicio', 'fecha de inicio',
+      'start_date', 'inicio', 'fecha inicio'
+    ]);
+    const colFechaFin      = encontrarColumna(headers, [
+      'fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin',
+      'fecha de finalizacion', 'fecha de finalización',
+      'end_date', 'fin', 'fecha fin'
+    ]);
+    const colReglamento    = encontrarColumna(headers, ['reglamento', 'conoces_reglamento', 'conoce_reglamento', 'conoces el reglamento']);
+    const colConsentimiento= encontrarColumna(headers, ['consentimiento', 'consentimiento_director', 'director_consent', 'cuentas con el consentimiento']);
     const colDiasSolicitados = encontrarColumna(headers, [
       // ✅ Nombres EXACTOS de KoboToolbox (más específicos primero)
       'día personal solicitado',        // Nombre exacto del formulario (con tilde)
       'dia personal solicitado',        // Sin tilde
+      'día personal solicitado_uuid',   // Con _uuid (Kobo a veces agrega esto)
+      'dia personal solicitado_uuid',   // Sin tilde con _uuid
       'numero de dias solicitados',     // Alternativa
       'número de días solicitados',     // Con tildes
       'personal solicitado',            // Parcial específico
@@ -1399,10 +1416,18 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       return encontrado;
     }
 
-    const colFechaInicio   = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'start_date', 'inicio']);
-    const colFechaFin      = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'end_date', 'fin']);
+    const colFechaInicio   = encontrarColumna(headers, [
+      'fecha_inicio', 'fecha_de_inicio', 'fecha de inicio',
+      'start_date', 'inicio', 'fecha inicio'
+    ]);
+    const colFechaFin      = encontrarColumna(headers, [
+      'fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin',
+      'fecha de finalizacion', 'fecha de finalización',
+      'end_date', 'fin', 'fecha fin'
+    ]);
     const colDiasSolicitados = encontrarColumna(headers, [
       'día personal solicitado', 'dia personal solicitado',
+      'día personal solicitado_uuid', 'dia personal solicitado_uuid',
       'numero de dias solicitados', 'número de días solicitados',
       'personal solicitado', 'dias_personal', 'days_requested',
       'd_as_personal', 'dia_personal', 'dias_de_personal',
@@ -1410,7 +1435,7 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       'dias solicitados', 'cuantos dias', 'cantidad de dias',
       'numero dias', 'dias a tomar', 'personal_solicitado'
     ]);
-    const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento']);
+    const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento', 'programa/', 'departamento/']);
     const mapeoDirectores  = obtenerMapeoDirectores();
 
     // Agrupar registros por empleado → un solo correo por persona aunque tenga varios registros nuevos
