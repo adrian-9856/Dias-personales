@@ -398,6 +398,32 @@ function detectarRegistrosNuevos(datosKobo) {
 }
 
 /**
+ * Calcula el número de días entre dos fechas (incluye el día de inicio)
+ * @param {string} fechaIniStr - Fecha de inicio (YYYY-MM-DD, DD/MM/YYYY, etc.)
+ * @param {string} fechaFinStr - Fecha de fin (YYYY-MM-DD, DD/MM/YYYY, etc.)
+ * @return {number} Número de días (0 si hay error)
+ */
+function calcularDiasEntreFechas(fechaIniStr, fechaFinStr) {
+  if (!fechaIniStr || !fechaFinStr) return 0;
+
+  try {
+    const fechaInicio = new Date(fechaIniStr);
+    const fechaFin = new Date(fechaFinStr);
+
+    if (isNaN(fechaInicio.getTime()) || isNaN(fechaFin.getTime())) {
+      return 0;
+    }
+
+    const milisegundosPorDia = 1000 * 60 * 60 * 24;
+    const diferenciaDias = Math.round((fechaFin - fechaInicio) / milisegundosPorDia);
+    return diferenciaDias + 1; // +1 para incluir el día de inicio
+  } catch (e) {
+    Logger.log('⚠️ Error al calcular días entre fechas: ' + e.message);
+    return 0;
+  }
+}
+
+/**
  * Agrega nuevos registros al historial con sus datos reales de columnas
  * @param {Array} registrosNuevos - Filas de datos nuevos
  * @param {Array} headers - Encabezados del CSV para identificar columnas
@@ -456,18 +482,10 @@ function agregarAlHistorial(registrosNuevos, headers) {
       }
 
       // 2. FALLBACK: Si no existe el campo o está vacío, CALCULAR desde las fechas
-      if (diasSolicitados === 0 && fechaIni && fechaFi) {
-        try {
-          const fechaInicio = new Date(fechaIni);
-          const fechaFin = new Date(fechaFi);
-          if (!isNaN(fechaInicio.getTime()) && !isNaN(fechaFin.getTime())) {
-            const milisegundosPorDia = 1000 * 60 * 60 * 24;
-            const diferenciaDias = Math.round((fechaFin - fechaInicio) / milisegundosPorDia);
-            diasSolicitados = diferenciaDias + 1; // +1 para incluir el día de inicio
-            Logger.log('✅ Días calculados desde fechas: ' + diasSolicitados + ' (del ' + fechaIni + ' al ' + fechaFi + ')');
-          }
-        } catch (e) {
-          Logger.log('⚠️ Error al calcular días desde fechas: ' + e.message);
+      if (diasSolicitados === 0) {
+        diasSolicitados = calcularDiasEntreFechas(fechaIni, fechaFi);
+        if (diasSolicitados > 0) {
+          Logger.log('✅ Días calculados desde fechas: ' + diasSolicitados + ' (del ' + fechaIni + ' al ' + fechaFi + ')');
         }
       }
 
@@ -615,18 +633,10 @@ function procesarDatos(datosCSV) {
       }
 
       // FALLBACK: Si el campo no existe o está vacío, CALCULAR desde fechas
-      if (diasSolicitados === 0 && fechaInicio && fechaFin) {
-        try {
-          const fechaIni = new Date(fechaInicio);
-          const fechaFi = new Date(fechaFin);
-          if (!isNaN(fechaIni.getTime()) && !isNaN(fechaFi.getTime())) {
-            const milisegundosPorDia = 1000 * 60 * 60 * 24;
-            const diferenciaDias = Math.round((fechaFi - fechaIni) / milisegundosPorDia);
-            diasSolicitados = diferenciaDias + 1; // +1 para incluir el día de inicio
-            Logger.log('✅ ' + nombre + ': ' + diasSolicitados + ' día(s) CALCULADOS desde fechas (' + fechaInicio + ' al ' + fechaFin + ')');
-          }
-        } catch (e) {
-          Logger.log('⚠️ Error al calcular días desde fechas para ' + nombre + ': ' + e.message);
+      if (diasSolicitados === 0) {
+        diasSolicitados = calcularDiasEntreFechas(fechaInicio, fechaFin);
+        if (diasSolicitados > 0) {
+          Logger.log('✅ ' + nombre + ': ' + diasSolicitados + ' día(s) CALCULADOS desde fechas (' + fechaInicio + ' al ' + fechaFin + ')');
         }
       }
 
@@ -2955,7 +2965,7 @@ function instalarTodoDesdeAmbienteLimpio() {
 
     // PASO 7: Crear trigger automático
     toast('Paso 7/7 — Configurando sincronización automática...', 2);
-    ScriptApp.newTrigger('sincronizarAutomatico')
+    ScriptApp.newTrigger('ejecutarAutomatico')
       .timeBased()
       .everyMinutes(1)
       .create();
