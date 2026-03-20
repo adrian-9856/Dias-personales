@@ -559,6 +559,7 @@ function agregarAlHistorial(registrosNuevos, headers) {
 
     // OPTIMIZACIÓN: Escribir todos los registros en un solo batch
     sheet.getRange(ultimaFila, 1, datosHistorial.length, 8).setValues(datosHistorial);
+    Utilities.sleep(500); // PAUSA: Escritura masiva de historial
     Logger.log(datosHistorial.length + ' registros agregados al historial');
 
     // OPTIMIZACIÓN: Actualizar caché de IDs procesados sin tener que releer todo el historial
@@ -1380,16 +1381,21 @@ function escribirDatosKobo(datos) {
     }
 
     sheet.clear();
+    Utilities.sleep(500); // PAUSA: Después de clear()
 
     if (datos.length > 0) {
       sheet.getRange(1, 1, datos.length, datos[0].length).setValues(datos);
+      Utilities.sleep(500); // PAUSA: Escritura masiva de datos brutos de Kobo
+
       sheet.getRange(1, 1, 1, datos[0].length)
         .setFontWeight('bold')
         .setBackground('#4285f4')
         .setFontColor('#ffffff');
+      Utilities.sleep(200); // PAUSA: Formateo de encabezados
 
       for (let i = 1; i <= datos[0].length; i++) {
         sheet.autoResizeColumn(i);
+        Utilities.sleep(100); // PAUSA: Entre cada autoResize
       }
     }
 
@@ -1497,6 +1503,7 @@ function escribirResumen(resumen) {
     }
 
     sheet.clear();
+    Utilities.sleep(500); // PAUSA: Dar tiempo a Google Sheets después de clear()
 
     // Título y fecha
     sheet.getRange('A1').setValue('RESUMEN DE DÍAS PERSONALES')
@@ -1579,6 +1586,7 @@ function escribirResumen(resumen) {
 
     if (datosPersonas.length > 0) {
       sheet.getRange(row, 1, datosPersonas.length, headersPorPersona.length).setValues(datosPersonas);
+      Utilities.sleep(500); // PAUSA: Escritura masiva de datos de personas
 
       // Formato condicional en "Total Restantes" (columna 9)
       const rangoRestantes = sheet.getRange(startRowPersonas, 9, datosPersonas.length, 1);
@@ -1600,6 +1608,7 @@ function escribirResumen(resumen) {
           .build()
       ];
       sheet.setConditionalFormatRules(rules);
+      Utilities.sleep(300); // PAUSA: Aplicación de formato condicional
     }
 
     row += datosPersonas.length + 2;
@@ -1638,11 +1647,13 @@ function escribirResumen(resumen) {
 
     if (datosEquipos.length > 0) {
       sheet.getRange(row, 1, datosEquipos.length, headersPorEquipo.length).setValues(datosEquipos);
+      Utilities.sleep(300); // PAUSA: Escritura de datos de equipos
     }
 
     // Auto-ajustar columnas
     for (let i = 1; i <= 10; i++) {
       sheet.autoResizeColumn(i);
+      Utilities.sleep(100); // PAUSA: Entre cada autoResize para evitar saturación
     }
 
     Logger.log('Resumen escrito en hoja: ' + CONFIG.SHEET_NAME_RESUMEN);
