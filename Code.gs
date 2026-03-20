@@ -11,6 +11,17 @@
 // CONFIGURACIÓN
 // ============================================================================
 
+/**
+ * DIRECTORAS DE PROGRAMAS
+ * Solo ESTAS 3 personas deben enviar copia a Stephany cuando tomen días personales.
+ * Trabajadores normales NO envían copia a Stephany.
+ */
+const DIRECTORAS_DE_PROGRAMAS = [
+  'Iris Melissa Payes Argueta',      // Apoyo emocional
+  'Carmen Rossana Boche Noriega',    // Educación
+  'Laura Alejandra Castañeda Leal'   // Inclusión Laboral
+];
+
 const CONFIG = {
   KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/es6dD99EgHBqdwUp7C9wei5/data.csv',
   KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
@@ -1050,6 +1061,24 @@ function esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores) {
 }
 
 /**
+ * Detecta si el empleado es una DIRECTORA DE PROGRAMA
+ * Solo las directoras de programas (Melissa, Rossana, Alejandra) envían copia a Stephany.
+ * Trabajadores normales NO envían copia a Stephany.
+ */
+function esDirectoraDePrograma(nombreEmpleado) {
+  if (!nombreEmpleado) return false;
+  var nombreNorm = normalizarTexto(nombreEmpleado);
+
+  for (var i = 0; i < DIRECTORAS_DE_PROGRAMAS.length; i++) {
+    if (normalizarTexto(DIRECTORAS_DE_PROGRAMAS[i]) === nombreNorm) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Extrae el nombre del empleado de las columnas de departamento del formulario.
  * El formulario KoboToolbox tiene una columna por cada equipo; el nombre del empleado
  * aparece en la columna de su equipo (el resto quedan vacías).
@@ -1473,10 +1502,10 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var correoDir    = infoDirector.correo;
       var correoEmp    = buscarCorreoEmpleado(nombreEmpleado);
 
-      // Detectar si el empleado ES un director (cualquier equipo)
-      var esDirector = esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores);
+      // Detectar si el empleado ES una DIRECTORA DE PROGRAMA (Melissa, Rossana, Alejandra)
+      var esDirectoraPrograma = esDirectoraDePrograma(nombreEmpleado);
 
-      Logger.log('Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirector: ' + esDirector);
+      Logger.log('Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirectoraPrograma: ' + esDirectoraPrograma);
 
       // ── Correo al DIRECTOR ────────────────────────────────────────────────
       if (correoDir && correoDir.trim() !== '') {
@@ -1490,15 +1519,16 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
           var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
           var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
 
-          // Si quien pide días ES un director → enviar copia a Hannah
+          // SOLO si es DIRECTORA DE PROGRAMA → enviar copia a Stephany
+          // Trabajadores normales NO envían copia a Stephany
           var destinatarios = correoDir.trim();
-          if (esDirector && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
+          if (esDirectoraPrograma && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
             destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
-            Logger.log('El empleado es director → agregando copia a Hannah');
+            Logger.log('⭐ Directora de Programa → agregando copia a Stephany (hannah@creamosguatemala.org)');
           }
 
           MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
-          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ') — ' + regs.length + ' registro(s) agrupado(s)' + (esDirector ? ' [con copia a Hannah]' : ''));
+          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ') — ' + regs.length + ' registro(s) agrupado(s)' + (esDirectoraPrograma ? ' [con copia a Stephany]' : ''));
         } catch (errDir) {
           Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
         }
@@ -2774,11 +2804,11 @@ function reenviarCorreoIndividual() {
       return;
     }
 
-    var esDirector = esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores);
+    var esDirectoraPrograma = esDirectoraDePrograma(nombreEmpleado);
 
     Logger.log('Correo empleado: ' + correoEmp);
     Logger.log('Correo director: ' + correoDir);
-    Logger.log('Es director: ' + esDirector);
+    Logger.log('Es directora de programa: ' + esDirectoraPrograma);
 
     var correosEnviados = 0;
 
@@ -2792,9 +2822,11 @@ function reenviarCorreoIndividual() {
         var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasTotales + ' día(s) — ' + equipoEmpleado;
         var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasTotales, saldo, companeros);
 
+        // SOLO si es DIRECTORA DE PROGRAMA → enviar copia a Stephany
         var destinatarios = correoDir.trim();
-        if (esDirector && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
+        if (esDirectoraPrograma && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
           destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
+          Logger.log('⭐ Directora de Programa → agregando copia a Stephany');
         }
 
         MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
