@@ -1484,6 +1484,9 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var fechaInicio    = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
       var fechaFin       = colFechaFin    >= 0 ? (reg[colFechaFin]    || 'No especificada') : 'No especificada';
 
+      // DEBUG: Mostrar equipo detectado (para diagnosticar problemas de correo)
+      Logger.log('🔍 DEBUG → Empleado: ' + nombreEmpleado + ' | Equipo detectado: "' + equipoEmpleado + '"');
+
       // Sumar días de TODOS los registros nuevos del empleado
       // SOLO usar el número del campo "días solicitados" (NO calcular desde fechas)
       var diasEstaSolicitud = regs.reduce(function(sum, r) {
@@ -1502,10 +1505,18 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var correoDir    = infoDirector.correo;
       var correoEmp    = buscarCorreoEmpleado(nombreEmpleado);
 
+      // DEBUG: Verificar que se encontró el director correcto
+      if (!correoDir || correoDir === '') {
+        Logger.log('⚠️ ADVERTENCIA: No se encontró director para equipo "' + equipoEmpleado + '"');
+        Logger.log('   Verifica que el equipo esté en la hoja Directores o en CONFIG.DIRECTORES_DEFAULT');
+      } else {
+        Logger.log('✅ Director encontrado: ' + infoDirector.nombre + ' → ' + correoDir);
+      }
+
       // Detectar si el empleado ES una DIRECTORA DE PROGRAMA (Melissa, Rossana, Alejandra)
       var esDirectoraPrograma = esDirectoraDePrograma(nombreEmpleado);
 
-      Logger.log('Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirectoraPrograma: ' + esDirectoraPrograma);
+      Logger.log('📧 Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirectoraPrograma: ' + esDirectoraPrograma);
 
       // ── Correo al DIRECTOR ────────────────────────────────────────────────
       if (correoDir && correoDir.trim() !== '') {
@@ -1524,11 +1535,13 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
           var destinatarios = correoDir.trim();
           if (esDirectoraPrograma && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
             destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
-            Logger.log('⭐ Directora de Programa → agregando copia a Stephany (hannah@creamosguatemala.org)');
+            Logger.log('⭐ ' + nombreEmpleado + ' es DIRECTORA DE PROGRAMA → agregando copia a Stephany');
+          } else if (!esDirectoraPrograma) {
+            Logger.log('👤 ' + nombreEmpleado + ' es trabajador normal → correo SOLO al director (NO a Stephany)');
           }
 
           MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
-          Logger.log('Correo enviado al director ' + infoDirector.nombre + ' (' + correoDir + ') — ' + regs.length + ' registro(s) agrupado(s)' + (esDirectoraPrograma ? ' [con copia a Stephany]' : ''));
+          Logger.log('✅ Correo DIRECTOR enviado a: ' + destinatarios + ' (para ' + nombreEmpleado + ' — ' + equipoEmpleado + ')' + (esDirectoraPrograma ? ' [con copia a Stephany]' : ''));
         } catch (errDir) {
           Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
         }
@@ -3212,6 +3225,7 @@ function instalarTodoDesdeAmbienteLimpio() {
 
     // PASO 3: Crear hoja de Configuración
     toast('Paso 3/7 — Creando Configuración...', 1);
+    Utilities.sleep(500); // Evitar timeout
     crearHojaConfiguracion();
     Logger.log('✅ Hoja de Configuración creada');
 
@@ -3224,11 +3238,13 @@ function instalarTodoDesdeAmbienteLimpio() {
 
     // PASO 4: Crear hoja de Directores
     toast('Paso 4/7 — Creando Directores...', 1);
+    Utilities.sleep(500); // Evitar timeout
     crearHojaDirectores();
     Logger.log('✅ Hoja de Directores creada');
 
     // PASO 5: Crear hoja de Plantilla de Empleados
     toast('Paso 5/7 — Creando Plantilla de Empleados...', 1);
+    Utilities.sleep(500); // Evitar timeout
     crearHojaPlantillaEmpleados();
     Logger.log('✅ Hoja de Plantilla de Empleados creada');
 
