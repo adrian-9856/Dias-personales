@@ -2043,6 +2043,7 @@ function onOpen() {
       .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
+      .addItem('🔍 Ver Estructura de Datos Kobo', 'diagnosticarEstructuraKobo')
       .addSeparator()
       .addItem('✅ INSTALAR TODO DESDE CERO', 'instalarTodoDesdeAmbienteLimpio')
       .addItem('❌ DESINSTALAR TODO', 'desinstalarTodoElSistema')
@@ -3049,5 +3050,117 @@ function toast(mensaje, duracion) {
     SpreadsheetApp.getActiveSpreadsheet().toast(mensaje, '⚙️ Sistema', duracion || 3);
   } catch (e) {
     Logger.log(mensaje);
+  }
+}
+
+
+/**
+ * 🔍 DIAGNÓSTICO COMPLETO: Ver estructura de datos de Kobo
+ * Muestra TODOS los encabezados y primeras 5 filas para debuggear
+ */
+function diagnosticarEstructuraKobo() {
+  var ui = SpreadsheetApp.getUi();
+
+  ui.alert(
+    '🔍 Diagnóstico de Estructura',
+    'Esta función mostrará:\n\n' +
+    '1. TODOS los encabezados del CSV de Kobo\n' +
+    '2. Las primeras 5 filas de datos\n' +
+    '3. Qué columnas usa para extraer nombres\n\n' +
+    'Los resultados aparecerán en el LOG.\n' +
+    'Ve a: Extensiones → Apps Script → Ejecuciones\n\n' +
+    'Presiona OK para continuar.',
+    ui.ButtonSet.OK
+  );
+
+  try {
+    Logger.log('═══════════════════════════════════════════════════════════');
+    Logger.log('🔍 DIAGNÓSTICO DE ESTRUCTURA DE DATOS KOBO');
+    Logger.log('═══════════════════════════════════════════════════════════');
+
+    var datosKobo = obtenerDatosKoboToolbox();
+
+    if (!datosKobo || datosKobo.length === 0) {
+      Logger.log('❌ ERROR: No hay datos en KoboToolbox');
+      ui.alert('❌ Error', 'No hay datos disponibles en KoboToolbox.', ui.ButtonSet.OK);
+      return;
+    }
+
+    var headers = datosKobo[0];
+
+    Logger.log('\n📋 ENCABEZADOS COMPLETOS (' + headers.length + ' columnas):');
+    Logger.log('─────────────────────────────────────────────────────────────');
+    for (var i = 0; i < headers.length; i++) {
+      Logger.log('[' + i + '] "' + headers[i] + '"');
+    }
+
+    Logger.log('\n📊 PRIMERAS 5 FILAS DE DATOS:');
+    Logger.log('─────────────────────────────────────────────────────────────');
+    var numFilas = Math.min(5, datosKobo.length - 1);
+    for (var i = 1; i <= numFilas; i++) {
+      Logger.log('\nFILA ' + i + ':');
+      var fila = datosKobo[i];
+      for (var j = 0; j < fila.length; j++) {
+        if (fila[j] && fila[j].toString().trim() !== '') {
+          Logger.log('  [' + j + '] ' + headers[j] + ' = "' + fila[j] + '"');
+        }
+      }
+    }
+
+    Logger.log('\n🔎 ANÁLISIS DE EXTRACCIÓN DE NOMBRES:');
+    Logger.log('─────────────────────────────────────────────────────────────');
+    var clavesEquipos = [
+      'inclusión laboral', 'inclusion laboral',
+      'centro de cuidado',
+      'apoyo emocional', 'apoyo emocinal',
+      'operaciones',
+      'mi-eelo',
+      'gestión de impacto', 'gestion de impacto',
+      'educación', 'educacion',
+      'administración', 'administracion'
+    ];
+
+    Logger.log('Columnas de equipo encontradas:');
+    for (var i = 0; i < headers.length; i++) {
+      var header = headers[i].toString().toLowerCase().trim();
+      for (var j = 0; j < clavesEquipos.length; j++) {
+        if (header.includes(clavesEquipos[j])) {
+          Logger.log('  ✅ [' + i + '] "' + headers[i] + '" → coincide con "' + clavesEquipos[j] + '"');
+        }
+      }
+    }
+
+    Logger.log('\nNombres extraídos de cada fila:');
+    for (var i = 1; i <= numFilas; i++) {
+      var fila = datosKobo[i];
+      var nombre = extraerNombreDeFila(headers, fila);
+      Logger.log('  FILA ' + i + ': "' + nombre + '"' + (nombre === '' ? ' ❌ VACÍO!' : ' ✅'));
+    }
+
+    Logger.log('\n═══════════════════════════════════════════════════════════');
+    Logger.log('✅ DIAGNÓSTICO COMPLETADO');
+    Logger.log('═══════════════════════════════════════════════════════════');
+
+    ui.alert(
+      '✅ Diagnóstico Completado',
+      'Los resultados están en el LOG.\n\n' +
+      'Para verlos:\n' +
+      '1. Extensiones → Apps Script\n' +
+      '2. Haz clic en "Ejecuciones" (ícono de reloj)\n' +
+      '3. Busca la ejecución de "diagnosticarEstructuraKobo"\n' +
+      '4. Revisa los encabezados y datos\n\n' +
+      'Busca las filas donde el nombre está VACÍO.',
+      ui.ButtonSet.OK
+    );
+
+  } catch (error) {
+    Logger.log('❌ ERROR EN DIAGNÓSTICO: ' + error.message);
+    Logger.log('Stack: ' + error.stack);
+
+    ui.alert(
+      '❌ Error',
+      'Error durante el diagnóstico:\n\n' + error.message,
+      ui.ButtonSet.OK
+    );
   }
 }
