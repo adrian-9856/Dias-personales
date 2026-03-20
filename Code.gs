@@ -408,19 +408,19 @@ function detectarRegistrosNuevos(datosKobo) {
       return datosKobo.slice(1);
     }
 
-    // OPTIMIZACIÓN: Solo leer los últimos 1000 IDs del historial (en vez de todos)
-    // Esto evita timeout en hojas con miles de registros históricos
+    // OPTIMIZACIÓN AGRESIVA: Reducir a 100 registros para documentos muy grandes
+    // Si tu historial tiene miles de filas, esto evita timeout crítico
     const ultimaFilaHistorial = sheetHistorial.getLastRow();
-    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 1000);
+    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 100); // REDUCIDO de 1000 a 100
     const startRow = Math.max(2, ultimaFilaHistorial - numFilasLeer + 1);
 
     Logger.log('📖 Leyendo últimos ' + numFilasLeer + ' IDs del historial (de ' + (ultimaFilaHistorial - 1) + ' totales)');
 
-    // OPTIMIZACIÓN: Usar retry automático para lectura del historial (puede tener timeout)
+    // OPTIMIZACIÓN: Usar retry automático con MÁS intentos y MAYOR delay
     const historialData = ejecutarConRetry(
       function() { return sheetHistorial.getRange(startRow, 1, numFilasLeer, 1).getValues(); },
       'lectura de historial',
-      3
+      5  // AUMENTADO de 3 a 5 reintentos
     );
 
     const historialIds = new Set(historialData.map(function(row) { return row[0].toString(); }));
@@ -1127,13 +1127,119 @@ function limpiarCacheIDs() {
 }
 
 /**
+ * DIAGNÓSTICO: Muestra información del documento para identificar problemas de performance
+ */
+function diagnosticarDocumento() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var hojas = ss.getSheets();
+    var diagnostico = [];
+
+    diagnostico.push('═══════════════════════════════════════════════════════');
+    diagnostico.push('📊 DIAGNÓSTICO DEL DOCUMENTO');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+    diagnostico.push('');
+    diagnostico.push('📄 Nombre: ' + ss.getName());
+    diagnostico.push('🆔 ID: ' + ss.getId());
+    diagnostico.push('📑 Total de hojas: ' + hojas.length);
+    diagnostico.push('');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+    diagnostico.push('📋 DETALLE POR HOJA:');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+
+    var totalFilas = 0;
+    var totalColumnas = 0;
+
+    hojas.forEach(function(hoja) {
+      var nombre = hoja.getName();
+      var filas = hoja.getLastRow();
+      var columnas = hoja.getLastColumn();
+      var celdas = filas * columnas;
+
+      totalFilas += filas;
+      totalColumnas += columnas;
+
+      var estado = '';
+      if (filas > 5000) {
+        estado = ' ⚠️ MUY GRANDE - PUEDE CAUSAR TIMEOUT';
+      } else if (filas > 2000) {
+        estado = ' ⚠️ Grande';
+      } else if (filas > 500) {
+        estado = ' ℹ️ Normal';
+      } else {
+        estado = ' ✅ Pequeña';
+      }
+
+      diagnostico.push('');
+      diagnostico.push('📄 ' + nombre + estado);
+      diagnostico.push('   Filas: ' + filas.toLocaleString());
+      diagnostico.push('   Columnas: ' + columnas);
+      diagnostico.push('   Celdas: ' + celdas.toLocaleString());
+    });
+
+    diagnostico.push('');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+    diagnostico.push('📈 RESUMEN:');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+    diagnostico.push('Total de filas: ' + totalFilas.toLocaleString());
+    diagnostico.push('Total de columnas: ' + totalColumnas.toLocaleString());
+
+    // Verificar caché
+    var cache = PropertiesService.getScriptProperties();
+    var cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
+    if (cachedIds) {
+      var ids = JSON.parse(cachedIds);
+      diagnostico.push('Caché activo: ' + ids.length + ' IDs');
+    } else {
+      diagnostico.push('Caché: NO ACTIVO');
+    }
+
+    diagnostico.push('');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+    diagnostico.push('💡 RECOMENDACIONES:');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+
+    var hayProblema = false;
+    hojas.forEach(function(hoja) {
+      if (hoja.getLastRow() > 5000) {
+        diagnostico.push('⚠️ La hoja "' + hoja.getName() + '" tiene ' + hoja.getLastRow() + ' filas');
+        diagnostico.push('   → RECOMENDACIÓN: Archivar registros antiguos (más de 6 meses)');
+        hayProblema = true;
+      }
+    });
+
+    if (!hayProblema) {
+      diagnostico.push('✅ El documento está en buen estado');
+      diagnostico.push('✅ No se detectaron problemas de tamaño');
+    }
+
+    diagnostico.push('');
+    diagnostico.push('═══════════════════════════════════════════════════════');
+
+    var mensaje = diagnostico.join('\n');
+    Logger.log(mensaje);
+
+    // Mostrar en UI
+    SpreadsheetApp.getUi().alert(
+      '📊 Diagnóstico del Documento',
+      mensaje,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+
+  } catch (e) {
+    Logger.log('❌ Error en diagnóstico: ' + e.message);
+    SpreadsheetApp.getActiveSpreadsheet().toast('Error en diagnóstico: ' + e.message, 'Error', 10);
+  }
+}
+
+/**
  * OPTIMIZACIÓN: Ejecuta una operación con retry automático en caso de timeout
  * Útil para operaciones que pueden fallar por sobrecarga temporal de Google Sheets
  */
 function ejecutarConRetry(operacion, nombreOperacion, maxReintentos) {
   maxReintentos = maxReintentos || 3;
   var reintentos = 0;
-  var delay = 1000; // Empezar con 1 segundo
+  var delay = 2000; // AUMENTADO: Empezar con 2 segundos (antes 1s)
 
   while (reintentos < maxReintentos) {
     try {
@@ -1142,13 +1248,20 @@ function ejecutarConRetry(operacion, nombreOperacion, maxReintentos) {
       reintentos++;
       var esTimeout = e.message.indexOf('agotó el tiempo') !== -1 ||
                       e.message.indexOf('timeout') !== -1 ||
-                      e.message.indexOf('Service error') !== -1;
+                      e.message.indexOf('Service error') !== -1 ||
+                      e.message.indexOf('timed out') !== -1;
 
       if (esTimeout && reintentos < maxReintentos) {
         Logger.log('⏳ Timeout en ' + nombreOperacion + ' (intento ' + reintentos + '/' + maxReintentos + '). Reintentando en ' + (delay/1000) + 's...');
+        SpreadsheetApp.getActiveSpreadsheet().toast(
+          'Timeout detectado. Reintentando (' + reintentos + '/' + maxReintentos + ')...',
+          '⏳ Procesando',
+          3
+        );
         Utilities.sleep(delay);
-        delay *= 2; // Backoff exponencial: 1s, 2s, 4s
+        delay *= 2; // Backoff exponencial: 2s, 4s, 8s, 16s, 32s
       } else {
+        Logger.log('❌ Error en ' + nombreOperacion + ': ' + e.message);
         throw e; // Si no es timeout o ya se agotaron los reintentos, lanzar error
       }
     }
@@ -2212,6 +2325,7 @@ function onOpen() {
       .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
       .addSeparator()
       .addItem('🗑️ Limpiar Caché (si hay problemas)', 'limpiarCacheIDs')
+      .addItem('📊 Diagnosticar Documento (ver tamaño)', 'diagnosticarDocumento')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
       .addItem('📬 Reenviar Correo Individual', 'reenviarCorreoIndividual')
