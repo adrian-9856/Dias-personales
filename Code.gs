@@ -22,6 +22,25 @@ const DIRECTORAS_DE_PROGRAMAS = [
   'Laura Alejandra Castañeda Leal'   // Inclusión Laboral
 ];
 
+/**
+ * MAPEO DE DIRECTORES A SUS SUPERVISORES
+ * Cuando un director toma días personales, se envía copia a su supervisor.
+ */
+const SUPERVISORES = {
+  // Supervisadas por Stephany (Directoras de Programas)
+  'Iris Melissa Payes Argueta': 'stephany@creamosguatemala.org',
+  'Carmen Rossana Boche Noriega': 'stephany@creamosguatemala.org',
+  'Laura Alejandra Castañeda Leal': 'stephany@creamosguatemala.org',
+
+  // Supervisado por Félix
+  'Alejandro Renato Valdéz Álvarez': 'felix@creamosguatemala.org',
+
+  // Supervisados por Hannah
+  'Eneko Arberas García': 'hannah@creamosguatemala.org',
+  'Carmen Lucía Carías González de Zacher': 'hannah@creamosguatemala.org',
+  'Stephany Tatiana Fuentes Rodríguez': 'hannah@creamosguatemala.org'
+};
+
 const CONFIG = {
   KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/es6dD99EgHBqdwUp7C9wei5/data.csv',
   KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
@@ -54,16 +73,18 @@ const CONFIG = {
 
   // Directores por equipo [nombre, correo]
   // NOTA: El correo es quien RECIBE las notificaciones (puede ser diferente del director del equipo)
+  // Directores por equipo: A QUIÉN se envía el correo cuando alguien del equipo toma días
+  // IMPORTANTE: El correo es del DIRECTOR del equipo (quien debe ser notificado)
   DIRECTORES_DEFAULT: {
-    'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',               correo: 'stephany@creamosguatemala.org' },
-    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Argueta',               correo: 'stephany@creamosguatemala.org' },
-    'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',          correo: 'felix@creamosguatemala.org' },
-    'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'hannah@creamosguatemala.org' },
-    'Gestión de Impacto':        { nombre: 'Eneko Arberas García',                     correo: 'hannah@creamosguatemala.org' },
-    'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',             correo: 'stephany@creamosguatemala.org' },
-    'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'hannah@creamosguatemala.org' },
+    'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',               correo: 'melissa@creamosguatemala.org' },
+    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Argueta',               correo: 'melissa@creamosguatemala.org' },
+    'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',          correo: 'renato@creamosguatemala.org' },
+    'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' },
+    'Gestión de Impacto':        { nombre: 'Eneko Arberas García',                     correo: 'eneko@creamosguatemala.org' },
+    'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',             correo: 'rossana@creamosguatemala.org' },
+    'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'carmen@creamosguatemala.org' },
     'Administración':            { nombre: 'Hannah',                                   correo: 'hannah@creamosguatemala.org' },
-    'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',           correo: 'stephany@creamosguatemala.org' }
+    'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',           correo: 'alejandra@creamosguatemala.org' }
   },
 
   // Correos de empleados (nombre completo → correo)
@@ -1079,6 +1100,30 @@ function esDirectoraDePrograma(nombreEmpleado) {
 }
 
 /**
+ * Busca el SUPERVISOR de un director
+ * Cuando un director toma días, se envía copia a su supervisor.
+ * Retorna el correo del supervisor o null si no tiene.
+ */
+function buscarSupervisor(nombreEmpleado) {
+  if (!nombreEmpleado) return null;
+
+  // Búsqueda exacta
+  if (SUPERVISORES[nombreEmpleado]) {
+    return SUPERVISORES[nombreEmpleado];
+  }
+
+  // Búsqueda normalizada (sin acentos/mayúsculas)
+  var nombreNorm = normalizarTexto(nombreEmpleado);
+  for (var nombre in SUPERVISORES) {
+    if (normalizarTexto(nombre) === nombreNorm) {
+      return SUPERVISORES[nombre];
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extrae el nombre del empleado de las columnas de departamento del formulario.
  * El formulario KoboToolbox tiene una columna por cada equipo; el nombre del empleado
  * aparece en la columna de su equipo (el resto quedan vacías).
@@ -1513,10 +1558,15 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
         Logger.log('✅ Director encontrado: ' + infoDirector.nombre + ' → ' + correoDir);
       }
 
-      // Detectar si el empleado ES una DIRECTORA DE PROGRAMA (Melissa, Rossana, Alejandra)
-      var esDirectoraPrograma = esDirectoraDePrograma(nombreEmpleado);
+      // Buscar si el empleado tiene supervisor (es un director)
+      var correoSupervisor = buscarSupervisor(nombreEmpleado);
+      var esDirector = correoSupervisor !== null;
 
-      Logger.log('📧 Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirectoraPrograma: ' + esDirectoraPrograma);
+      if (esDirector) {
+        Logger.log('👔 ' + nombreEmpleado + ' ES DIRECTOR → supervisor: ' + correoSupervisor);
+      }
+
+      Logger.log('📧 Notificación → empleado: ' + nombreEmpleado + ' | equipo: ' + equipoEmpleado + ' | correoEmp: ' + correoEmp + ' | correoDir: ' + correoDir + ' | esDirector: ' + esDirector);
 
       // ── Correo al DIRECTOR ────────────────────────────────────────────────
       if (correoDir && correoDir.trim() !== '') {
@@ -1530,18 +1580,20 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
           var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
           var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
 
-          // SOLO si es DIRECTORA DE PROGRAMA → enviar copia a Stephany
-          // Trabajadores normales NO envían copia a Stephany
+          // Si el empleado ES un DIRECTOR → enviar copia a su supervisor
           var destinatarios = correoDir.trim();
-          if (esDirectoraPrograma && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
-            destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
-            Logger.log('⭐ ' + nombreEmpleado + ' es DIRECTORA DE PROGRAMA → agregando copia a Stephany');
-          } else if (!esDirectoraPrograma) {
-            Logger.log('👤 ' + nombreEmpleado + ' es trabajador normal → correo SOLO al director (NO a Stephany)');
+          if (esDirector && correoSupervisor) {
+            // Evitar duplicados: si el director ya es el supervisor, no agregar copia
+            if (correoDir.trim().toLowerCase() !== correoSupervisor.toLowerCase()) {
+              destinatarios = correoDir.trim() + ',' + correoSupervisor;
+              Logger.log('⭐ ' + nombreEmpleado + ' es DIRECTOR → agregando copia a supervisor: ' + correoSupervisor);
+            }
+          } else {
+            Logger.log('👤 ' + nombreEmpleado + ' es trabajador normal → correo SOLO al director');
           }
 
           MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
-          Logger.log('✅ Correo DIRECTOR enviado a: ' + destinatarios + ' (para ' + nombreEmpleado + ' — ' + equipoEmpleado + ')' + (esDirectoraPrograma ? ' [con copia a Stephany]' : ''));
+          Logger.log('✅ Correo DIRECTOR enviado a: ' + destinatarios + ' (para ' + nombreEmpleado + ' — ' + equipoEmpleado + ')' + (esDirector ? ' [con copia a supervisor]' : ''));
         } catch (errDir) {
           Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
         }
@@ -2817,11 +2869,12 @@ function reenviarCorreoIndividual() {
       return;
     }
 
-    var esDirectoraPrograma = esDirectoraDePrograma(nombreEmpleado);
+    var correoSupervisor = buscarSupervisor(nombreEmpleado);
+    var esDirector = correoSupervisor !== null;
 
     Logger.log('Correo empleado: ' + correoEmp);
     Logger.log('Correo director: ' + correoDir);
-    Logger.log('Es directora de programa: ' + esDirectoraPrograma);
+    Logger.log('Es director: ' + esDirector + (esDirector ? ' → supervisor: ' + correoSupervisor : ''));
 
     var correosEnviados = 0;
 
@@ -2835,15 +2888,17 @@ function reenviarCorreoIndividual() {
         var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasTotales + ' día(s) — ' + equipoEmpleado;
         var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasTotales, saldo, companeros);
 
-        // SOLO si es DIRECTORA DE PROGRAMA → enviar copia a Stephany
+        // Si el empleado ES un DIRECTOR → enviar copia a su supervisor
         var destinatarios = correoDir.trim();
-        if (esDirectoraPrograma && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
-          destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
-          Logger.log('⭐ Directora de Programa → agregando copia a Stephany');
+        if (esDirector && correoSupervisor) {
+          if (correoDir.trim().toLowerCase() !== correoSupervisor.toLowerCase()) {
+            destinatarios = correoDir.trim() + ',' + correoSupervisor;
+            Logger.log('⭐ ' + nombreEmpleado + ' es DIRECTOR → agregando copia a supervisor: ' + correoSupervisor);
+          }
         }
 
         MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
-        Logger.log('✅ Correo enviado al director: ' + correoDir);
+        Logger.log('✅ Correo enviado al director: ' + destinatarios);
         correosEnviados++;
       } catch (e) {
         Logger.log('❌ Error enviando correo al director: ' + e.message);
