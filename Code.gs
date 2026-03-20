@@ -408,9 +408,21 @@ function detectarRegistrosNuevos(datosKobo) {
       return datosKobo.slice(1);
     }
 
-    // Obtener IDs ya procesados del historial (columna A desde fila 2)
+    // OPTIMIZACIÓN: Solo leer los últimos 1000 IDs del historial (en vez de todos)
+    // Esto evita timeout en hojas con miles de registros históricos
     const ultimaFilaHistorial = sheetHistorial.getLastRow();
-    const historialData = sheetHistorial.getRange(2, 1, ultimaFilaHistorial - 1, 1).getValues();
+    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 1000);
+    const startRow = Math.max(2, ultimaFilaHistorial - numFilasLeer + 1);
+
+    Logger.log('📖 Leyendo últimos ' + numFilasLeer + ' IDs del historial (de ' + (ultimaFilaHistorial - 1) + ' totales)');
+
+    // OPTIMIZACIÓN: Usar retry automático para lectura del historial (puede tener timeout)
+    const historialData = ejecutarConRetry(
+      function() { return sheetHistorial.getRange(startRow, 1, numFilasLeer, 1).getValues(); },
+      'lectura de historial',
+      3
+    );
+
     const historialIds = new Set(historialData.map(function(row) { return row[0].toString(); }));
 
     // Filtrar registros que no están en el historial
@@ -545,8 +557,27 @@ function agregarAlHistorial(registrosNuevos, headers) {
       ];
     });
 
+    // OPTIMIZACIÓN: Escribir todos los registros en un solo batch
     sheet.getRange(ultimaFila, 1, datosHistorial.length, 8).setValues(datosHistorial);
     Logger.log(datosHistorial.length + ' registros agregados al historial');
+
+    // OPTIMIZACIÓN: Actualizar caché de IDs procesados sin tener que releer todo el historial
+    try {
+      const cache = PropertiesService.getScriptProperties();
+      const cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
+      const nuevosIDs = datosHistorial.map(function(fila) { return fila[0]; });
+
+      if (cachedIds) {
+        const idsActuales = JSON.parse(cachedIds);
+        const idsActualizados = idsActuales.concat(nuevosIDs);
+        // Mantener solo los últimos 1000 IDs para no exceder límite de propiedades
+        const idsLimitados = idsActualizados.slice(-1000);
+        cache.setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimitados));
+        Logger.log('💾 Caché actualizado con ' + nuevosIDs.length + ' nuevos IDs (total: ' + idsLimitados.length + ')');
+      }
+    } catch (e) {
+      Logger.log('⚠️ No se pudo actualizar caché: ' + e.message);
+    }
 
   } catch (error) {
     Logger.log('Error en agregarAlHistorial: ' + error.message);
@@ -1079,6 +1110,49 @@ function esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores) {
   }
 
   return false;
+}
+
+/**
+ * Limpia el caché de IDs procesados
+ * Útil si el historial se ha modificado manualmente o para forzar recarga
+ */
+function limpiarCacheIDs() {
+  try {
+    PropertiesService.getScriptProperties().deleteProperty('IDS_PROCESADOS_CACHE');
+    Logger.log('🗑️ Caché de IDs limpiado correctamente');
+    SpreadsheetApp.getActiveSpreadsheet().toast('Caché de IDs limpiado. Próxima ejecución recargará desde historial.', 'Caché', 4);
+  } catch (e) {
+    Logger.log('❌ Error limpiando caché: ' + e.message);
+  }
+}
+
+/**
+ * OPTIMIZACIÓN: Ejecuta una operación con retry automático en caso de timeout
+ * Útil para operaciones que pueden fallar por sobrecarga temporal de Google Sheets
+ */
+function ejecutarConRetry(operacion, nombreOperacion, maxReintentos) {
+  maxReintentos = maxReintentos || 3;
+  var reintentos = 0;
+  var delay = 1000; // Empezar con 1 segundo
+
+  while (reintentos < maxReintentos) {
+    try {
+      return operacion();
+    } catch (e) {
+      reintentos++;
+      var esTimeout = e.message.indexOf('agotó el tiempo') !== -1 ||
+                      e.message.indexOf('timeout') !== -1 ||
+                      e.message.indexOf('Service error') !== -1;
+
+      if (esTimeout && reintentos < maxReintentos) {
+        Logger.log('⏳ Timeout en ' + nombreOperacion + ' (intento ' + reintentos + '/' + maxReintentos + '). Reintentando en ' + (delay/1000) + 's...');
+        Utilities.sleep(delay);
+        delay *= 2; // Backoff exponencial: 1s, 2s, 4s
+      } else {
+        throw e; // Si no es timeout o ya se agotaron los reintentos, lanzar error
+      }
+    }
+  }
 }
 
 /**
@@ -2136,6 +2210,8 @@ function onOpen() {
       .addItem('➕ Agregar Nuevo Empleado', 'agregarNuevoEmpleado')
       .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
       .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
+      .addSeparator()
+      .addItem('🗑️ Limpiar Caché (si hay problemas)', 'limpiarCacheIDs')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
       .addItem('📬 Reenviar Correo Individual', 'reenviarCorreoIndividual')
