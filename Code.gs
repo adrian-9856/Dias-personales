@@ -925,7 +925,12 @@ function crearHojaPlantillaEmpleados() {
     sheet = ss.insertSheet(CONFIG.SHEET_NAME_PLANTILLA);
   }
 
-  sheet.clear();
+  // OPTIMIZACIÓN: sheet.clear() puede causar timeout, usar retry
+  ejecutarConRetry(
+    function() { sheet.clear(); },
+    'limpiar hoja Plantilla Empleados',
+    5
+  );
 
   sheet.getRange('A1').setValue('PLANTILLA DE EMPLEADOS')
     .setFontSize(14).setFontWeight('bold')
@@ -2213,7 +2218,12 @@ function crearHojaConfiguracion() {
   const diasExistentes = esNueva ? CONFIG.DIAS_TOTALES : leerConfigPorEtiqueta(sheet, 'Días personales totales:', CONFIG.DIAS_TOTALES);
   const correosActivoExistente = esNueva ? false : leerConfigPorEtiqueta(sheet, 'Enviar correos (TRUE/FALSE):', false);
 
-  sheet.clear();
+  // OPTIMIZACIÓN: sheet.clear() puede causar timeout, usar retry
+  ejecutarConRetry(
+    function() { sheet.clear(); },
+    'limpiar hoja Configuración',
+    5
+  );
 
   // Título
   sheet.getRange('A1').setValue('CONFIGURACIÓN DEL SISTEMA')
@@ -2282,7 +2292,12 @@ function crearHojaDirectores() {
     sheet = ss.insertSheet(CONFIG.SHEET_NAME_DIRECTORES);
   }
 
-  sheet.clear();
+  // OPTIMIZACIÓN: sheet.clear() puede causar timeout, usar retry
+  ejecutarConRetry(
+    function() { sheet.clear(); },
+    'limpiar hoja Directores',
+    5
+  );
 
   sheet.getRange('A1').setValue('MAPEO DE EQUIPOS A DIRECTORES')
     .setFontSize(14)
