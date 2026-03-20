@@ -919,7 +919,7 @@ function getSemestre(fechaStr) {
  * El usuario puede editar equipos y correos directamente en esa hoja.
  */
 function crearHojaPlantillaEmpleados() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = obtenerSpreadsheetConRetry(); // OPTIMIZACIÓN: Usar retry al abrir documento
   var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
   if (!sheet) {
     sheet = ss.insertSheet(CONFIG.SHEET_NAME_PLANTILLA);
@@ -1253,11 +1253,15 @@ function ejecutarConRetry(operacion, nombreOperacion, maxReintentos) {
 
       if (esTimeout && reintentos < maxReintentos) {
         Logger.log('⏳ Timeout en ' + nombreOperacion + ' (intento ' + reintentos + '/' + maxReintentos + '). Reintentando en ' + (delay/1000) + 's...');
-        SpreadsheetApp.getActiveSpreadsheet().toast(
-          'Timeout detectado. Reintentando (' + reintentos + '/' + maxReintentos + ')...',
-          '⏳ Procesando',
-          3
-        );
+        try {
+          SpreadsheetApp.getActiveSpreadsheet().toast(
+            'Timeout detectado. Reintentando (' + reintentos + '/' + maxReintentos + ')...',
+            '⏳ Procesando',
+            3
+          );
+        } catch (toastError) {
+          // Si toast falla, continuar sin él
+        }
         Utilities.sleep(delay);
         delay *= 2; // Backoff exponencial: 2s, 4s, 8s, 16s, 32s
       } else {
@@ -1266,6 +1270,18 @@ function ejecutarConRetry(operacion, nombreOperacion, maxReintentos) {
       }
     }
   }
+}
+
+/**
+ * OPTIMIZACIÓN CRÍTICA: Obtiene el spreadsheet activo con retry automático
+ * El problema más común es que SpreadsheetApp.getActiveSpreadsheet() causa timeout en documentos grandes
+ */
+function obtenerSpreadsheetConRetry() {
+  return ejecutarConRetry(
+    function() { return SpreadsheetApp.getActiveSpreadsheet(); },
+    'abrir documento',
+    5  // 5 reintentos para operación crítica
+  );
 }
 
 /**
@@ -2178,7 +2194,7 @@ function crearCuerpoCorreoDirector(director) {
  *   A7:B7 - Correo del administrador (B7)
  */
 function crearHojaConfiguracion() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = obtenerSpreadsheetConRetry(); // OPTIMIZACIÓN: Usar retry al abrir documento
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
   const esNueva = !sheet;
 
@@ -2259,7 +2275,7 @@ function crearHojaConfiguracion() {
  * Crea la hoja de mapeo de directores
  */
 function crearHojaDirectores() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = obtenerSpreadsheetConRetry(); // OPTIMIZACIÓN: Usar retry al abrir documento
   let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DIRECTORES);
 
   if (!sheet) {
@@ -3401,11 +3417,14 @@ function instalarTodoDesdeAmbienteLimpio() {
   }
 
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-
     Logger.log('═══════════════════════════════════════════════════════');
     Logger.log('🚀 INICIANDO INSTALACIÓN COMPLETA');
     Logger.log('═══════════════════════════════════════════════════════');
+
+    // OPTIMIZACIÓN CRÍTICA: Obtener spreadsheet con retry (esto puede causar timeout en documentos grandes)
+    Logger.log('🔄 Abriendo documento (esto puede tardar si el documento es muy grande)...');
+    var ss = obtenerSpreadsheetConRetry();
+    Logger.log('✅ Documento abierto correctamente');
 
     // PASO 1: Eliminar triggers antiguos si existen
     toast('Paso 1/7 — Limpiando triggers antiguos...', 2);
