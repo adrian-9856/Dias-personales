@@ -12,7 +12,7 @@
 // ============================================================================
 
 const CONFIG = {
-  KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/esigRStULsbGhgCaayXsgHC/data.csv',
+  KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/es6dD99EgHBqdwUp7C9wei5/data.csv',
   KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
   ADMIN_EMAIL_DEFAULT: 'admin@creamosguatemala.org',
   DIAS_TOTALES: 15,     // Días personales totales por persona al año (default)
@@ -2952,12 +2952,9 @@ function instalarTodoDesdeAmbienteLimpio() {
       Logger.log('✅ Hoja Inicio eliminada');
     }
 
-    SpreadsheetApp.flush();
-
     // PASO 3: Crear hoja de Configuración
-    toast('Paso 3/7 — Creando Configuración...', 2);
+    toast('Paso 3/7 — Creando Configuración...', 1);
     crearHojaConfiguracion();
-    SpreadsheetApp.flush();
     Logger.log('✅ Hoja de Configuración creada');
 
     // Asegurar que el token esté configurado
@@ -2968,25 +2965,25 @@ function instalarTodoDesdeAmbienteLimpio() {
     }
 
     // PASO 4: Crear hoja de Directores
-    toast('Paso 4/7 — Creando Directores...', 2);
+    toast('Paso 4/7 — Creando Directores...', 1);
     crearHojaDirectores();
-    SpreadsheetApp.flush();
     Logger.log('✅ Hoja de Directores creada');
 
     // PASO 5: Crear hoja de Plantilla de Empleados
-    toast('Paso 5/7 — Creando Plantilla de Empleados...', 2);
+    toast('Paso 5/7 — Creando Plantilla de Empleados...', 1);
     crearHojaPlantillaEmpleados();
-    SpreadsheetApp.flush();
     Logger.log('✅ Hoja de Plantilla de Empleados creada');
 
     // PASO 6: Crear hojas vacías para Datos, Resumen e Historial
-    toast('Paso 6/7 — Creando hojas de datos...', 2);
+    toast('Paso 6/7 — Creando hojas de datos...', 1);
     [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
       if (!ss.getSheetByName(nombre)) {
         ss.insertSheet(nombre);
         Logger.log('✅ Hoja creada: ' + nombre);
       }
     });
+
+    // UN SOLO FLUSH al final de todas las operaciones (más rápido)
     SpreadsheetApp.flush();
 
     // PASO 7: Crear trigger automático
