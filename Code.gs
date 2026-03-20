@@ -42,7 +42,7 @@ const SUPERVISORES = {
 };
 
 const CONFIG = {
-  KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/es6dD99EgHBqdwUp7C9wei5/data.csv',
+  KOBO_API_URL: 'https://kf.kobotoolbox.org/api/v2/assets/aDmwMtoy4r65YTNSt4sURS/export-settings/esZcQDf2L5CTmiFETsXyKYZ/data.csv',
   KOBO_TOKEN_DEFAULT: '64cc018b88067397addd36b09288be8b6539cf39',
   ADMIN_EMAIL_DEFAULT: 'admin@creamosguatemala.org',
   DIAS_TOTALES: 15,     // Días personales totales por persona al año (default)
