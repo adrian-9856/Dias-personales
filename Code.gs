@@ -2043,6 +2043,7 @@ function onOpen() {
       .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
+      .addItem('📬 Reenviar Correo Individual', 'reenviarCorreoIndividual')
       .addItem('🔍 Ver Estructura de Datos Kobo', 'diagnosticarEstructuraKobo')
       .addSeparator()
       .addItem('✅ INSTALAR TODO DESDE CERO', 'instalarTodoDesdeAmbienteLimpio')
@@ -2620,6 +2621,231 @@ function desactivarTriggersAutomaticos() {
     }
   }
 }
+
+/**
+ * 📧 Reenviar correo a un empleado específico (individual)
+ * Útil cuando un empleado no recibió su correo o se necesita reenviar
+ */
+function reenviarCorreoIndividual() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  try {
+    // PASO 1: Pedir nombre del empleado
+    var respuestaNombre = ui.prompt(
+      '📧 Reenviar Correo Individual',
+      'Ingresa el NOMBRE COMPLETO del empleado:\n\n' +
+      '(Ejemplo: Laura Alejandra Castañeda Leal)\n\n' +
+      'El sistema buscará sus solicitudes y reenviará el correo.',
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (respuestaNombre.getSelectedButton() !== ui.Button.OK) {
+      ui.alert('Operación cancelada');
+      return;
+    }
+
+    var nombreEmpleado = respuestaNombre.getResponseText().trim();
+
+    if (!nombreEmpleado || nombreEmpleado === '') {
+      ui.alert('❌ Error', 'Debes ingresar un nombre válido.', ui.ButtonSet.OK);
+      return;
+    }
+
+    Logger.log('═══════════════════════════════════════════════════════');
+    Logger.log('📧 REENVÍO DE CORREO INDIVIDUAL');
+    Logger.log('Empleado: ' + nombreEmpleado);
+    Logger.log('═══════════════════════════════════════════════════════');
+
+    // PASO 2: Verificar que el envío de correos esté activado
+    var sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+    if (!sheetConfig) {
+      ui.alert('❌ Error', 'No existe la hoja de Configuración.', ui.ButtonSet.OK);
+      return;
+    }
+
+    var enviarCorreos = leerConfigPorEtiqueta(sheetConfig, 'Enviar correos (TRUE/FALSE):', false);
+    if (!enviarCorreos || enviarCorreos.toString().toLowerCase() !== 'true') {
+      var confirmar = ui.alert(
+        '⚠️ Correos Desactivados',
+        'El envío de correos está DESACTIVADO en la configuración.\n\n' +
+        '¿Deseas activarlo y continuar?',
+        ui.ButtonSet.YES_NO
+      );
+
+      if (confirmar === ui.Button.YES) {
+        sheetConfig.getRange('B6').setValue('TRUE');
+        Logger.log('✅ Envío de correos activado');
+      } else {
+        ui.alert('Operación cancelada');
+        return;
+      }
+    }
+
+    ss.toast('Buscando solicitudes de ' + nombreEmpleado + '...', 'Procesando', 5);
+
+    // PASO 3: Obtener datos de Kobo y procesar
+    var datosKobo = obtenerDatosKoboToolbox();
+    if (!datosKobo || datosKobo.length <= 1) {
+      ui.alert('❌ Error', 'No hay datos disponibles en KoboToolbox.', ui.ButtonSet.OK);
+      return;
+    }
+
+    var headers = datosKobo[0];
+    var datosProcessados = procesarDatos(datosKobo);
+
+    // PASO 4: Buscar solicitudes del empleado
+    var solicitudesEmpleado = [];
+    var colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento', 'programa/', 'departamento/']);
+
+    for (var i = 1; i < datosKobo.length; i++) {
+      var fila = datosKobo[i];
+      var nombre = extraerNombreDeFila(headers, fila);
+
+      if (normalizarTexto(nombre) === normalizarTexto(nombreEmpleado)) {
+        solicitudesEmpleado.push(fila);
+      }
+    }
+
+    if (solicitudesEmpleado.length === 0) {
+      ui.alert(
+        '⚠️ Sin Solicitudes',
+        'No se encontraron solicitudes para: ' + nombreEmpleado + '\n\n' +
+        'Verifica que el nombre sea EXACTO (con tildes y mayúsculas).',
+        ui.ButtonSet.OK
+      );
+      Logger.log('❌ No se encontraron solicitudes para: ' + nombreEmpleado);
+      return;
+    }
+
+    Logger.log('✅ Encontradas ' + solicitudesEmpleado.length + ' solicitud(es) de ' + nombreEmpleado);
+
+    // PASO 5: Enviar correo usando la misma lógica que enviarNotificacionNuevoRegistro
+    var reg = solicitudesEmpleado[solicitudesEmpleado.length - 1]; // Última solicitud
+    var colFechaInicio = encontrarColumna(headers, ['fecha_inicio', 'fecha_de_inicio', 'fecha de inicio', 'start_date', 'inicio', 'fecha inicio']);
+    var colFechaFin = encontrarColumna(headers, ['fecha_finalizacion', 'fecha_de_finalizacion', 'fecha_fin', 'fecha de finalizacion', 'fecha de finalización', 'end_date', 'fin', 'fecha fin']);
+    var colDiasSolicitados = encontrarColumna(headers, ['día personal solicitado', 'dia personal solicitado', 'día personal solicitado_uuid', 'dia personal solicitado_uuid', 'numero de dias solicitados', 'número de días solicitados', 'personal solicitado', 'dias_personal', 'days_requested']);
+
+    var equipoEmpleado = (colEquipo >= 0 ? (reg[colEquipo] || '') : '').toString().trim() || 'Sin equipo';
+    var fechaInicio = colFechaInicio >= 0 ? (reg[colFechaInicio] || 'No especificada') : 'No especificada';
+    var fechaFin = colFechaFin >= 0 ? (reg[colFechaFin] || 'No especificada') : 'No especificada';
+
+    // Calcular días totales de TODAS las solicitudes
+    var diasTotales = 0;
+    for (var i = 0; i < solicitudesEmpleado.length; i++) {
+      var d = 0;
+      if (colDiasSolicitados >= 0) {
+        d = parseInt((solicitudesEmpleado[i][colDiasSolicitados] || '0').toString().trim(), 10);
+      }
+      if (d === 0) {
+        // Calcular desde fechas si no está el campo
+        var fIni = colFechaInicio >= 0 ? solicitudesEmpleado[i][colFechaInicio] : '';
+        var fFin = colFechaFin >= 0 ? solicitudesEmpleado[i][colFechaFin] : '';
+        d = calcularDiasEntreFechas(fIni, fFin);
+      }
+      diasTotales += d;
+    }
+
+    Logger.log('Días totales: ' + diasTotales + ' (de ' + solicitudesEmpleado.length + ' solicitud(es))');
+
+    // Buscar datos procesados del empleado
+    var saldo = null;
+    for (var i = 0; i < datosProcessados.length; i++) {
+      if (normalizarTexto(datosProcessados[i].nombre) === normalizarTexto(nombreEmpleado)) {
+        saldo = datosProcessados[i];
+        break;
+      }
+    }
+
+    // Obtener correos
+    var mapeoDirectores = obtenerMapeoDirectores();
+    var infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
+    var correoDir = infoDirector.correo;
+    var correoEmp = CONFIG.CORREOS_EMPLEADOS[nombreEmpleado] || (saldo ? saldo.correoEmpleado : '');
+
+    if (!correoEmp || correoEmp.trim() === '') {
+      ui.alert(
+        '⚠️ Sin Correo Configurado',
+        'No hay correo configurado para: ' + nombreEmpleado + '\n\n' +
+        'Agrega el correo en el CONFIG y vuelve a intentar.',
+        ui.ButtonSet.OK
+      );
+      Logger.log('❌ Sin correo para empleado: ' + nombreEmpleado);
+      return;
+    }
+
+    var esDirector = esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores);
+
+    Logger.log('Correo empleado: ' + correoEmp);
+    Logger.log('Correo director: ' + correoDir);
+    Logger.log('Es director: ' + esDirector);
+
+    var correosEnviados = 0;
+
+    // ENVIAR CORREO AL DIRECTOR
+    if (correoDir && correoDir.trim() !== '') {
+      try {
+        var companeros = datosProcessados.filter(function(p) {
+          return normalizarTexto(p.equipo) === normalizarTexto(equipoEmpleado);
+        });
+
+        var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasTotales + ' día(s) — ' + equipoEmpleado;
+        var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasTotales, saldo, companeros);
+
+        var destinatarios = correoDir.trim();
+        if (esDirector && correoDir.trim().toLowerCase() !== 'hannah@creamosguatemala.org') {
+          destinatarios = correoDir.trim() + ',hannah@creamosguatemala.org';
+        }
+
+        MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
+        Logger.log('✅ Correo enviado al director: ' + correoDir);
+        correosEnviados++;
+      } catch (e) {
+        Logger.log('❌ Error enviando correo al director: ' + e.message);
+      }
+    }
+
+    // ENVIAR CORREO AL EMPLEADO
+    try {
+      var asuntoEmp = '[Días Personales] Tu solicitud fue registrada — quedan ' +
+        (saldo ? saldo.diasRestantes : '?') + ' día(s)';
+      var cuerpoEmp = construirCorreoEmpleado(nombreEmpleado, fechaInicio, fechaFin, diasTotales, saldo);
+
+      MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
+      Logger.log('✅ Correo enviado al empleado: ' + correoEmp);
+      correosEnviados++;
+    } catch (e) {
+      Logger.log('❌ Error enviando correo al empleado: ' + e.message);
+    }
+
+    Logger.log('═══════════════════════════════════════════════════════');
+    Logger.log('✅ REENVÍO COMPLETADO - ' + correosEnviados + ' correo(s) enviado(s)');
+    Logger.log('═══════════════════════════════════════════════════════');
+
+    ui.alert(
+      '✅ Correo Reenviado',
+      '📧 Correo(s) enviado(s) exitosamente:\n\n' +
+      '  → Empleado: ' + nombreEmpleado + '\n' +
+      '  → Correo: ' + correoEmp + '\n' +
+      '  → Días: ' + diasTotales + '\n' +
+      '  → Solicitudes: ' + solicitudesEmpleado.length + '\n\n' +
+      (correoDir ? '  → Director notificado: ' + correoDir : '') + '\n\n' +
+      '✅ Total de correos enviados: ' + correosEnviados,
+      ui.ButtonSet.OK
+    );
+
+  } catch (error) {
+    Logger.log('❌ ERROR EN REENVÍO: ' + error.message);
+    Logger.log('Stack: ' + error.stack);
+
+    ui.alert(
+      '❌ Error',
+      'Error al reenviar correo:\n\n' + error.message,
+      ui.ButtonSet.OK
+    );
+  }
+}
+
 
 /**
  * Envía reporte manual a todos los directores con correo configurado
