@@ -478,11 +478,13 @@ function agregarAlHistorial(registrosNuevos, headers) {
   try {
     if (!registrosNuevos || registrosNuevos.length === 0) return;
 
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    // OPTIMIZACIÓN: Usar retry al abrir documento
+    const ss = obtenerSpreadsheetConRetry();
     let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
 
     if (!sheet) {
       sheet = ss.insertSheet(CONFIG.SHEET_NAME_HISTORIAL);
+      Utilities.sleep(300);
     }
 
     // Crear encabezados si la hoja está vacía
@@ -559,9 +561,15 @@ function agregarAlHistorial(registrosNuevos, headers) {
       ];
     });
 
-    // OPTIMIZACIÓN: Escribir todos los registros en un solo batch
-    sheet.getRange(ultimaFila, 1, datosHistorial.length, 8).setValues(datosHistorial);
-    Utilities.sleep(500); // PAUSA: Escritura masiva de historial
+    // OPTIMIZACIÓN CRÍTICA: Escribir todos los registros con retry
+    ejecutarConRetry(
+      function() {
+        sheet.getRange(ultimaFila, 1, datosHistorial.length, 8).setValues(datosHistorial);
+      },
+      'escribir registros en historial',
+      5
+    );
+    Utilities.sleep(800); // AUMENTADO: Más tiempo después de escritura masiva
     Logger.log(datosHistorial.length + ' registros agregados al historial');
 
     // OPTIMIZACIÓN: Actualizar caché de IDs procesados sin tener que releer todo el historial
@@ -1377,29 +1385,62 @@ function extraerNombreDeFila(headers, fila) {
  */
 function escribirDatosKobo(datos) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    // OPTIMIZACIÓN: Usar retry al abrir documento
+    const ss = obtenerSpreadsheetConRetry();
     let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_DATOS);
 
     if (!sheet) {
       sheet = ss.insertSheet(CONFIG.SHEET_NAME_DATOS);
+      Utilities.sleep(300); // PAUSA: Después de crear hoja nueva
     }
 
-    sheet.clear();
-    Utilities.sleep(500); // PAUSA: Después de clear()
+    // OPTIMIZACIÓN CRÍTICA: sheet.clear() con retry (causa timeout frecuente)
+    ejecutarConRetry(
+      function() { sheet.clear(); },
+      'limpiar hoja Datos KoboToolbox',
+      5  // 5 reintentos
+    );
+    Utilities.sleep(800); // AUMENTADO: Más tiempo después de clear()
 
     if (datos.length > 0) {
-      sheet.getRange(1, 1, datos.length, datos[0].length).setValues(datos);
-      Utilities.sleep(500); // PAUSA: Escritura masiva de datos brutos de Kobo
+      // OPTIMIZACIÓN CRÍTICA: setValues con retry (operación pesada)
+      ejecutarConRetry(
+        function() {
+          sheet.getRange(1, 1, datos.length, datos[0].length).setValues(datos);
+        },
+        'escribir datos de KoboToolbox',
+        5  // 5 reintentos
+      );
+      Utilities.sleep(800); // AUMENTADO: Más tiempo después de escritura masiva
 
-      sheet.getRange(1, 1, 1, datos[0].length)
-        .setFontWeight('bold')
-        .setBackground('#4285f4')
-        .setFontColor('#ffffff');
-      Utilities.sleep(200); // PAUSA: Formateo de encabezados
+      // Formatear encabezados con retry
+      ejecutarConRetry(
+        function() {
+          sheet.getRange(1, 1, 1, datos[0].length)
+            .setFontWeight('bold')
+            .setBackground('#4285f4')
+            .setFontColor('#ffffff');
+        },
+        'formatear encabezados',
+        3
+      );
+      Utilities.sleep(300);
 
-      for (let i = 1; i <= datos[0].length; i++) {
-        sheet.autoResizeColumn(i);
-        Utilities.sleep(100); // PAUSA: Entre cada autoResize
+      // OPTIMIZACIÓN: autoResize en lotes pequeños para evitar timeout
+      const numColumnas = datos[0].length;
+      const batchSize = 5; // Resize 5 columnas a la vez
+      for (let i = 1; i <= numColumnas; i += batchSize) {
+        const endCol = Math.min(i + batchSize - 1, numColumnas);
+        ejecutarConRetry(
+          function() {
+            for (let col = i; col <= endCol; col++) {
+              sheet.autoResizeColumn(col);
+            }
+          },
+          'autoResize columnas ' + i + '-' + endCol,
+          3
+        );
+        Utilities.sleep(200); // Pausa entre lotes
       }
     }
 
@@ -1499,15 +1540,22 @@ function generarResumen(datosProcessados) {
  */
 function escribirResumen(resumen) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    // OPTIMIZACIÓN: Usar retry al abrir documento
+    const ss = obtenerSpreadsheetConRetry();
     let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_RESUMEN);
 
     if (!sheet) {
       sheet = ss.insertSheet(CONFIG.SHEET_NAME_RESUMEN);
+      Utilities.sleep(300);
     }
 
-    sheet.clear();
-    Utilities.sleep(500); // PAUSA: Dar tiempo a Google Sheets después de clear()
+    // OPTIMIZACIÓN CRÍTICA: sheet.clear() con retry
+    ejecutarConRetry(
+      function() { sheet.clear(); },
+      'limpiar hoja Resumen',
+      5
+    );
+    Utilities.sleep(800); // AUMENTADO: Más tiempo después de clear()
 
     // Título y fecha
     sheet.getRange('A1').setValue('RESUMEN DE DÍAS PERSONALES')
@@ -1589,8 +1637,15 @@ function escribirResumen(resumen) {
       });
 
     if (datosPersonas.length > 0) {
-      sheet.getRange(row, 1, datosPersonas.length, headersPorPersona.length).setValues(datosPersonas);
-      Utilities.sleep(500); // PAUSA: Escritura masiva de datos de personas
+      // OPTIMIZACIÓN CRÍTICA: setValues con retry (operación pesada)
+      ejecutarConRetry(
+        function() {
+          sheet.getRange(row, 1, datosPersonas.length, headersPorPersona.length).setValues(datosPersonas);
+        },
+        'escribir datos de personas en Resumen',
+        5
+      );
+      Utilities.sleep(800); // AUMENTADO: Más tiempo después de escritura masiva
 
       // Formato condicional en "Total Restantes" (columna 9)
       const rangoRestantes = sheet.getRange(startRowPersonas, 9, datosPersonas.length, 1);
@@ -1650,14 +1705,31 @@ function escribirResumen(resumen) {
     });
 
     if (datosEquipos.length > 0) {
-      sheet.getRange(row, 1, datosEquipos.length, headersPorEquipo.length).setValues(datosEquipos);
-      Utilities.sleep(300); // PAUSA: Escritura de datos de equipos
+      // OPTIMIZACIÓN: setValues con retry
+      ejecutarConRetry(
+        function() {
+          sheet.getRange(row, 1, datosEquipos.length, headersPorEquipo.length).setValues(datosEquipos);
+        },
+        'escribir datos de equipos en Resumen',
+        3
+      );
+      Utilities.sleep(500);
     }
 
-    // Auto-ajustar columnas
-    for (let i = 1; i <= 10; i++) {
-      sheet.autoResizeColumn(i);
-      Utilities.sleep(100); // PAUSA: Entre cada autoResize para evitar saturación
+    // OPTIMIZACIÓN: autoResize en lotes para evitar timeout
+    const batchSize = 5;
+    for (let i = 1; i <= 10; i += batchSize) {
+      const endCol = Math.min(i + batchSize - 1, 10);
+      ejecutarConRetry(
+        function() {
+          for (let col = i; col <= endCol; col++) {
+            sheet.autoResizeColumn(col);
+          }
+        },
+        'autoResize columnas ' + i + '-' + endCol,
+        3
+      );
+      Utilities.sleep(200);
     }
 
     Logger.log('Resumen escrito en hoja: ' + CONFIG.SHEET_NAME_RESUMEN);
