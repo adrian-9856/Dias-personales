@@ -77,13 +77,13 @@ const CONFIG = {
   // IMPORTANTE: El correo es del DIRECTOR del equipo (quien debe ser notificado)
   DIRECTORES_DEFAULT: {
     'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',               correo: 'melissa@creamosguatemala.org' },
-    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Argueta',               correo: 'melissa@creamosguatemala.org' },
+    'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Agueta',               correo: 'melissa@creamosguatemala.org' },
     'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',          correo: 'renato@creamosguatemala.org' },
     'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' },
     'Gestión de Impacto':        { nombre: 'Eneko Arberas García',                     correo: 'eneko@creamosguatemala.org' },
     'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',             correo: 'rossana@creamosguatemala.org' },
     'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'carmen@creamosguatemala.org' },
-    'Administración':            { nombre: 'Hannah',                                   correo: 'hannah@creamosguatemala.org' },
+    'Administración':            { nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'carmen@creamosguatemala.org' },
     'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',           correo: 'alejandra@creamosguatemala.org' }
   },
 
@@ -124,8 +124,8 @@ const CONFIG = {
     'Jacqueline Paola Tello':                     'jacqueline@creamosguatemala.org',
     'Bruna España Bernal':                        'bruna@creamosguatemala.org',
     // Administración
-    'Carmen Lucía Carías González de Zacher':     'carmen@creamosguatemala.org',
-    'Hannah':                                     'hannah@creamosguatemala.org'
+    'Carmen Lucía Carías González de Zacher':     'carmen@creamosguatemala.org'
+    // Nota: Hannah no aparece aquí porque es SUPERVISORA, no empleada
   }
 };
 
