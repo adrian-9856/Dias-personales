@@ -77,8 +77,10 @@ KOBO_API_URL: '.../export-settings/esZcQDf2L5CTmiFETsXyKYZ/data.csv'
 | **Gestión de Impacto** | Eneko Arberas García | eneko@creamosguatemala.org |
 | **Educación** | Carmen Rossana Boche Noriega | rossana@creamosguatemala.org |
 | **Centro de cuidado infantil** | Carmen Lucía Carías González de Zacher | carmen@creamosguatemala.org |
-| **Administración** | Hannah | hannah@creamosguatemala.org |
+| **Administración** | Carmen Lucía Carías González de Zacher | carmen@creamosguatemala.org |
 | **Inclusión Laboral** | Laura Alejandra Castañeda Leal | alejandra@creamosguatemala.org |
+
+**Nota:** Carmen Lucía es directora de 2 equipos: Administración y Centro de cuidado infantil.
 
 ---
 
@@ -127,7 +129,8 @@ KOBO_API_URL: '.../export-settings/esZcQDf2L5CTmiFETsXyKYZ/data.csv'
 
 ### Administración:
 - Carmen Lucía Carías González de Zacher → carmen@creamosguatemala.org
-- Hannah → hannah@creamosguatemala.org
+
+**Nota:** Hannah NO aparece en ningún equipo porque es SUPERVISORA, no empleada.
 
 ---
 
