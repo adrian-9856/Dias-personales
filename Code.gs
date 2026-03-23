@@ -967,22 +967,24 @@ function crearHojaPlantillaEmpleados() {
     ['Maritza Carolina Pérez López',               'Operaciones',               'maritza@creamosguatemala.org'],
     ['Yhenifer Yaneth Aguilar Rodríguez de Pérez', 'Operaciones',               'yhenifer@creamosguatemala.org'],
     ['Juan Josué Alvarado Caxaj',                  'Operaciones',               'josue@creamosguatemala.org'],
-    // mi-eelo (4)
+    // mi-eelo (5)
     ['Stephany Tatiana Fuentes Rodríguez',         'mi-eelo',                   'stephany@creamosguatemala.org'],
     ['Jansel Abel Ojeda Posadas',                  'mi-eelo',                   'jansel@creamosguatemala.org'],
     ['Eustolia Beatriz González Gómez',            'mi-eelo',                   'beatriz@creamosguatemala.org'],
     ['Irma Jeaneth García',                        'mi-eelo',                   'irma@creamosguatemala.org'],
+    ['Celeste Alejandra del Rosario García Cárdenas', 'mi-eelo',                'celeste@creamosguatemala.org'],
     // Educación (5)
     ['Carmen Rossana Boche Noriega',               'Educación',                 'rossana@creamosguatemala.org'],
     ['Mildred Alejandra Molina Valiente',          'Educación',                 'mildred@creamosguatemala.org'],
     ['Yenifer Pamela Mejía de la Cruz',            'Educación',                 'pamela@creamosguatemala.org'],
     ['Liliana Román',                              'Educación',                 'lily@creamosguatemala.org'],
     ['Abraham Jose David Marcos Bámaca Nij',       'Educación',                 'abraham@creamosguatemala.org'],
-    // Inclusión Laboral (4)
+    // Inclusión Laboral (5)
     ['Laura Alejandra Castañeda Leal',             'Inclusión Laboral',         'alejandra@creamosguatemala.org'],
     ['Eva Priscila López Xaper',                   'Inclusión Laboral',         'eva@creamosguatemala.org'],
     ['Sindy Lucero Sánchez Barrientos',            'Inclusión Laboral',         'sindy@creamosguatemala.org'],
     ['Paola Lisbeth Ortiz Ramírez',                'Inclusión Laboral',         'paola@creamosguatemala.org'],
+    ['Sharon Pamela Samayoa Rodriguez',            'Inclusión Laboral',         'pamelasamayoa@creamosguatemala.org'],
     // Centro de cuidado infantil (2)
     ['Jacqueline Paola Tello',                     'Centro de cuidado infantil','jacqueline@creamosguatemala.org'],
     ['Bruna España Bernal',                        'Centro de cuidado infantil','bruna@creamosguatemala.org'],

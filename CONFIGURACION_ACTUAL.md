@@ -59,7 +59,7 @@
 
 ## 📧 3. CORREOS DE EMPLEADOS (CORREOS_EMPLEADOS)
 
-**Total:** 28 empleados configurados
+**Total:** 30 empleados configurados
 
 ### Gestión de Impacto (4):
 - Eneko Arberas García → eneko@creamosguatemala.org
@@ -79,11 +79,12 @@
 - Yhenifer Yaneth Aguilar Rodríguez de Pérez → yhenifer@creamosguatemala.org
 - Juan Josué Alvarado Caxaj → josue@creamosguatemala.org
 
-### mi-eelo (4):
+### mi-eelo (5):
 - Stephany Tatiana Fuentes Rodríguez → stephany@creamosguatemala.org
 - Jansel Abel Ojeda Posadas → jansel@creamosguatemala.org
 - Eustolia Beatriz González Gómez → beatriz@creamosguatemala.org
 - Irma Jeaneth García → irma@creamosguatemala.org
+- Celeste Alejandra del Rosario García Cárdenas → celeste@creamosguatemala.org
 
 ### Educación (5):
 - Carmen Rossana Boche Noriega → rossana@creamosguatemala.org
@@ -92,11 +93,12 @@
 - Liliana Román → lily@creamosguatemala.org
 - Abraham Jose David Marcos Bámaca Nij → abraham@creamosguatemala.org
 
-### Inclusión Laboral (4):
+### Inclusión Laboral (5):
 - Laura Alejandra Castañeda Leal → alejandra@creamosguatemala.org
 - Eva Priscila López Xaper → eva@creamosguatemala.org
 - Sindy Lucero Sánchez Barrientos → sindy@creamosguatemala.org
 - Paola Lisbeth Ortiz Ramírez → paola@creamosguatemala.org
+- Sharon Pamela Samayoa Rodriguez → pamelasamayoa@creamosguatemala.org
 
 ### Centro de cuidado infantil (2):
 - Jacqueline Paola Tello → jacqueline@creamosguatemala.org
@@ -177,7 +179,7 @@ Hannah (¿Administración?) pide 2 días
 
 1. ✅ **URL de KoboToolbox:** Actualizada a esZcQDf2L5CTmiFETsXyKYZ
 2. ✅ **8 equipos** con directores asignados
-3. ✅ **28+ empleados** con correos configurados
+3. ✅ **30 empleados** con correos configurados
 4. ✅ **Supervisores de Stephany:** 3 directoras de programas
 5. ✅ **Supervisores de Hannah:** Eneko, Carmen, Stephany (según tu aclaración)
 6. ✅ **Supervisor de Félix:** Alejandro (Operaciones)

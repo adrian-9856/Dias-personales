@@ -50,7 +50,7 @@ Cuando un **DIRECTOR** pide días, se notifica a su **SUPERVISOR**:
 
 ---
 
-## 📧 EMPLEADOS POR EQUIPO (27 personas)
+## 📧 EMPLEADOS POR EQUIPO (29 personas)
 
 ### Gestión de Impacto (4):
 - Eneko Arberas García → eneko@creamosguatemala.org
@@ -70,11 +70,12 @@ Cuando un **DIRECTOR** pide días, se notifica a su **SUPERVISOR**:
 - Yhenifer Yaneth Aguilar Rodríguez de Pérez → yhenifer@creamosguatemala.org
 - Juan Josué Alvarado Caxaj → josue@creamosguatemala.org
 
-### mi-eelo (4):
+### mi-eelo (5):
 - Stephany Tatiana Fuentes Rodríguez → stephany@creamosguatemala.org
 - Jansel Abel Ojeda Posadas → jansel@creamosguatemala.org
 - Eustolia Beatriz González Gómez → beatriz@creamosguatemala.org
 - Irma Jeaneth García → irma@creamosguatemala.org
+- Celeste Alejandra del Rosario García Cárdenas → celeste@creamosguatemala.org
 
 ### Educación (5):
 - Carmen Rossana Boche Noriega → rossana@creamosguatemala.org
@@ -83,11 +84,12 @@ Cuando un **DIRECTOR** pide días, se notifica a su **SUPERVISOR**:
 - Liliana Román → lily@creamosguatemala.org
 - Abraham Jose David Marcos Bámaca Nij → abraham@creamosguatemala.org
 
-### Inclusión Laboral (4):
+### Inclusión Laboral (5):
 - Laura Alejandra Castañeda Leal → alejandra@creamosguatemala.org
 - Eva Priscila López Xaper → eva@creamosguatemala.org
 - Sindy Lucero Sánchez Barrientos → sindy@creamosguatemala.org
 - Paola Lisbeth Ortiz Ramírez → paola@creamosguatemala.org
+- Sharon Pamela Samayoa Rodriguez → pamelasamayoa@creamosguatemala.org
 
 ### Centro de cuidado infantil (2):
 - Jacqueline Paola Tello → jacqueline@creamosguatemala.org
@@ -167,7 +169,7 @@ Jacqueline (Centro infantil) pide 2 días
 | Hannah | ⚠️ Rol confuso | ✅ Solo supervisora |
 | Carmen | ⚠️ 1 equipo | ✅ 2 equipos |
 | Administración | ⚠️ Hannah | ✅ Carmen |
-| Total empleados | 28 | 27 (Hannah fuera) |
+| Total empleados | 28 | 29 (Hannah fuera) |
 | Confiabilidad | 30% | 99.9% |
 
 ---
@@ -230,7 +232,7 @@ Días Personales → 🆕 Buscar Nuevos Registros
 - [x] Sistema de retry (5 intentos)
 - [x] Sistema de pausas (11 pausas)
 - [x] 8 equipos con directores
-- [x] 27 empleados con correos
+- [x] 29 empleados con correos
 - [x] Hannah configurada como supervisora
 - [x] Carmen configurada como directora de 2 equipos
 - [x] Administración con Carmen como directora
