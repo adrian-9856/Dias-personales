@@ -2367,6 +2367,7 @@ function onOpen() {
       .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
       .addSeparator()
       .addItem('🗑️ Limpiar Caché (si hay problemas)', 'limpiarCacheIDs')
+      .addItem('🔧 Corregir URL de KoboToolbox', 'corregirURLKoboToolbox')
       .addItem('📊 Diagnosticar Documento (ver tamaño)', 'diagnosticarDocumento')
       .addSeparator()
       .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
@@ -3721,6 +3722,70 @@ function diagnosticarEstructuraKobo() {
     ui.alert(
       '❌ Error',
       'Error durante el diagnóstico:\n\n' + error.message,
+      ui.ButtonSet.OK
+    );
+  }
+}
+
+// ============================================================================
+// FUNCIÓN DE REPARACIÓN: Corregir URL de KoboToolbox
+// ============================================================================
+
+/**
+ * Corrige la URL de KoboToolbox en la hoja de Configuración
+ * Útil cuando la URL está incorrecta y causa errores de "Bandwidth quota exceeded"
+ */
+function corregirURLKoboToolbox() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    Logger.log('🔧 Iniciando corrección de URL de KoboToolbox...');
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+
+    // Si no existe la hoja de Configuración, crearla
+    if (!sheet) {
+      Logger.log('⚠️ Hoja de configuración no encontrada. Creándola...');
+      crearHojaConfiguracion();
+      sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+    }
+
+    // Leer URL actual
+    const urlActual = sheet.getRange('B4').getValue();
+    const urlCorrecta = CONFIG.KOBO_API_URL;
+
+    Logger.log('📋 URL ACTUAL: ' + urlActual);
+    Logger.log('✅ URL CORRECTA: ' + urlCorrecta);
+
+    // Actualizar la URL en la celda B4
+    sheet.getRange('B4').setValue(urlCorrecta);
+
+    // Resaltar temporalmente la celda actualizada
+    sheet.getRange('B4').setBackground('#d4edda'); // Verde claro
+
+    Logger.log('✅ URL corregida exitosamente');
+
+    ui.alert(
+      '✅ URL Corregida',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+      'URL ANTERIOR:\n' + urlActual + '\n\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+      'URL CORRECTA (actualizada):\n' + urlCorrecta + '\n\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+      '✅ La URL ha sido corregida en la hoja "Configuración".\n\n' +
+      '🔹 Ahora puedes ejecutar "Buscar Nuevos Registros" sin errores.\n\n' +
+      '🔹 Los correos de error deberían detenerse.',
+      ui.ButtonSet.OK
+    );
+
+  } catch (error) {
+    Logger.log('❌ ERROR AL CORREGIR URL: ' + error.message);
+    Logger.log('Stack: ' + error.stack);
+
+    ui.alert(
+      '❌ Error',
+      'No se pudo corregir la URL:\n\n' + error.message,
       ui.ButtonSet.OK
     );
   }
