@@ -109,6 +109,7 @@ const CONFIG = {
     'Jansel Abel Ojeda Posadas':                  'jansel@creamosguatemala.org',
     'Eustolia Beatriz González Gómez':            'beatriz@creamosguatemala.org',
     'Irma Jeaneth García':                        'irma@creamosguatemala.org',
+    'Celeste Alejandra del Rosario García Cárdenas': 'celeste@creamosguatemala.org',
     // Educación
     'Carmen Rossana Boche Noriega':               'rossana@creamosguatemala.org',
     'Mildred Alejandra Molina Valiente':          'mildred@creamosguatemala.org',
@@ -120,6 +121,7 @@ const CONFIG = {
     'Eva Priscila López Xaper':                   'eva@creamosguatemala.org',
     'Sindy Lucero Sánchez Barrientos':            'sindy@creamosguatemala.org',
     'Paola Lisbeth Ortiz Ramírez':                'paola@creamosguatemala.org',
+    'Sharon Pamela Samayoa Rodriguez':            'pamelasamayoa@creamosguatemala.org',
     // Centro de cuidado infantil
     'Jacqueline Paola Tello':                     'jacqueline@creamosguatemala.org',
     'Bruna España Bernal':                        'bruna@creamosguatemala.org',
