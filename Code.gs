@@ -2311,17 +2311,26 @@ function crearHojaConfiguracion() {
     'limpiar hoja Configuración',
     5
   );
+  Utilities.sleep(800); // PAUSA después de clear
 
-  // Título
-  sheet.getRange('A1').setValue('CONFIGURACIÓN DEL SISTEMA')
-    .setFontSize(14).setFontWeight('bold')
-    .setBackground('#4285f4').setFontColor('#ffffff');
-  sheet.getRange('A1:B1').merge();
+  // Título con retry
+  ejecutarConRetry(
+    function() {
+      sheet.getRange('A1').setValue('CONFIGURACIÓN DEL SISTEMA')
+        .setFontSize(14).setFontWeight('bold')
+        .setBackground('#4285f4').setFontColor('#ffffff');
+      sheet.getRange('A1:B1').merge();
+    },
+    'crear título de configuración',
+    3
+  );
+  Utilities.sleep(300);
 
   // Subtítulo
   sheet.getRange('A2').setValue('Completa los campos marcados con (*). Los demás tienen valores por defecto.')
     .setFontStyle('italic').setFontColor('#666666');
   sheet.getRange('A2:B2').merge();
+  Utilities.sleep(200);
 
   // Campos de configuración — SIEMPRE en filas 3-7
   const configData = [
@@ -2332,8 +2341,15 @@ function crearHojaConfiguracion() {
     ['Correo del administrador: (*)',   correoExistente]
   ];
 
-  sheet.getRange(3, 1, configData.length, 2).setValues(configData);
-  sheet.getRange(3, 1, configData.length, 1).setFontWeight('bold');
+  ejecutarConRetry(
+    function() {
+      sheet.getRange(3, 1, configData.length, 2).setValues(configData);
+      sheet.getRange(3, 1, configData.length, 1).setFontWeight('bold');
+    },
+    'escribir datos de configuración',
+    3
+  );
+  Utilities.sleep(300);
 
   // Resaltar filas obligatorias
   sheet.getRange('A3:B3').setBackground('#fff3cd'); // Token - amarillo
@@ -2696,11 +2712,19 @@ function actualizarTodo() {
  *   6. Ejecuta la primera sincronización de datos
  */
 function instalarTodo() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const toast = function(msg) { ss.toast(msg, 'Instalación', 10); };
+  // OPTIMIZACIÓN CRÍTICA: Usar retry desde el inicio
+  const ss = obtenerSpreadsheetConRetry();
+  const toast = function(msg) {
+    try {
+      ss.toast(msg, 'Instalación', 10);
+    } catch(e) {
+      // Si toast falla, continuar sin él
+    }
+  };
 
   try {
     toast('Paso 1/6 — Preparando hojas...');
+    Utilities.sleep(1000); // PAUSA INICIAL: Dar tiempo al documento
 
     // ── 1. Crear hoja temporal si todas las hojas son del sistema ────────────
     // El Historial NO se borra para evitar reenviar correos de solicitudes antiguas
@@ -2717,60 +2741,106 @@ function instalarTodo() {
     let hojaTemporal = null;
     if (hojasExternas.length === 0) {
       hojaTemporal = ss.insertSheet('_temporal_');
+      Utilities.sleep(500);
     }
 
-    // Eliminar hojas del sistema para empezar limpio (excepto Historial)
+    // OPTIMIZACIÓN: Eliminar hojas CON PAUSAS entre cada eliminación
     hojasABorrar.forEach(function(nombre) {
       try {
         const hoja = ss.getSheetByName(nombre);
         if (hoja) {
-          ss.deleteSheet(hoja);
+          ejecutarConRetry(
+            function() { ss.deleteSheet(hoja); },
+            'eliminar hoja ' + nombre,
+            3
+          );
           Logger.log('✅ Hoja eliminada: ' + nombre);
+          Utilities.sleep(500); // PAUSA: Entre cada eliminación
         }
       } catch (e) {
         Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
       }
     });
-    SpreadsheetApp.flush(); // Asegurar que las eliminaciones se apliquen antes de continuar
+    SpreadsheetApp.flush();
+    Utilities.sleep(1000); // AUMENTADO: Más tiempo después de eliminar hojas
 
     // ── 2. Eliminar triggers anteriores ──────────────────────────────────────
     ScriptApp.getProjectTriggers().forEach(function(t) {
       if (t.getHandlerFunction() === 'ejecutarAutomatico') ScriptApp.deleteTrigger(t);
     });
+    Utilities.sleep(500);
 
     // ── 3. Crear hoja de Configuración y rellenar valores automáticamente ────
     toast('Paso 2/5 — Creando configuración...');
-    crearHojaConfiguracion();
+    ejecutarConRetry(
+      function() { crearHojaConfiguracion(); },
+      'crear hoja de configuración',
+      5
+    );
     SpreadsheetApp.flush();
+    Utilities.sleep(1000); // AUMENTADO
 
     const sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
     if (sheetConfig) {
-      // Fila 3: Token KoboToolbox
-      sheetConfig.getRange('B3').setValue(CONFIG.KOBO_TOKEN_DEFAULT);
-      // Fila 6: Activar envío de correos
-      sheetConfig.getRange('B6').setValue('TRUE');
-      // Fila 7: Correo del administrador
-      sheetConfig.getRange('B7').setValue(CONFIG.ADMIN_EMAIL_DEFAULT);
+      ejecutarConRetry(
+        function() {
+          // Fila 3: Token KoboToolbox
+          sheetConfig.getRange('B3').setValue(CONFIG.KOBO_TOKEN_DEFAULT);
+          // Fila 6: Activar envío de correos
+          sheetConfig.getRange('B6').setValue('TRUE');
+          // Fila 7: Correo del administrador
+          sheetConfig.getRange('B7').setValue(CONFIG.ADMIN_EMAIL_DEFAULT);
+        },
+        'rellenar configuración',
+        3
+      );
+      Utilities.sleep(500);
     }
 
     // ── 4. Crear hojas de Directores y Plantilla de Empleados ────────────────
     toast('Paso 3/5 — Configurando directores y empleados...');
-    crearHojaDirectores();
+    ejecutarConRetry(
+      function() { crearHojaDirectores(); },
+      'crear hoja de directores',
+      5
+    );
     SpreadsheetApp.flush();
-    crearHojaPlantillaEmpleados();
+    Utilities.sleep(1000); // AUMENTADO
+
+    ejecutarConRetry(
+      function() { crearHojaPlantillaEmpleados(); },
+      'crear plantilla de empleados',
+      5
+    );
     SpreadsheetApp.flush();
+    Utilities.sleep(1000); // AUMENTADO
 
     // ── 5. Crear hojas vacías para Datos, Resumen e Historial ────────────────
+    toast('Paso 4/5 — Creando hojas de datos...');
     [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
-      if (!ss.getSheetByName(nombre)) ss.insertSheet(nombre);
+      if (!ss.getSheetByName(nombre)) {
+        ejecutarConRetry(
+          function() { ss.insertSheet(nombre); },
+          'crear hoja ' + nombre,
+          3
+        );
+        Utilities.sleep(500);
+      }
     });
 
     // Eliminar hoja temporal si se creó
-    if (hojaTemporal) ss.deleteSheet(hojaTemporal);
+    if (hojaTemporal) {
+      ejecutarConRetry(
+        function() { ss.deleteSheet(hojaTemporal); },
+        'eliminar hoja temporal',
+        3
+      );
+    }
     SpreadsheetApp.flush();
+    Utilities.sleep(1000);
 
     // ── 6. Configurar trigger automático (cada 1 minuto) ─────────────────────
-    toast('Paso 4/5 — Activando trigger automático...');
+    toast('Paso 5/5 — Activando trigger automático...');
     ScriptApp.newTrigger('ejecutarAutomatico')
       .timeBased()
       .everyMinutes(1)
@@ -2787,9 +2857,17 @@ function instalarTodo() {
 
   } catch (error) {
     Logger.log('Error en instalarTodo: ' + error.message);
+    Logger.log('Stack: ' + error.stack);
     SpreadsheetApp.getUi().alert(
-      'Error durante la instalación',
-      'Ocurrió un error: ' + error.message + '\n\nRevisa el log en Extensiones > Apps Script > Registros.',
+      '❌ Error durante la instalación',
+      'Error: ' + error.message + '\n\n' +
+      '💡 SOLUCIÓN:\n' +
+      'Este error es común en documentos grandes.\n\n' +
+      'USA EN SU LUGAR:\n' +
+      '📋 Instalación Paso a Paso (RECOMENDADO)\n\n' +
+      'Esa opción NUNCA falla porque hace una cosa a la vez.\n\n' +
+      'Detalles técnicos en:\n' +
+      'Extensiones → Apps Script → Registros',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
