@@ -539,31 +539,54 @@ function detectarRegistrosNuevos(datosKobo) {
 
     // Leer IDs desde la caché de PropertiesService (hasta 1000 IDs)
     var historialIds = new Set();
+    var cacheActiva = false;
     try {
       const cache = PropertiesService.getScriptProperties();
       const cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
       if (cachedIds) {
         JSON.parse(cachedIds).forEach(function(id) { historialIds.add(id.toString()); });
+        cacheActiva = historialIds.size > 0;
         Logger.log('💾 Caché cargada: ' + historialIds.size + ' IDs');
       }
     } catch (e) {
       Logger.log('⚠️ No se pudo leer caché: ' + e.message);
     }
 
-    // Complementar con las últimas 200 filas del historial (por si la caché está incompleta)
+    // Leer IDs del historial para complementar o reconstruir la caché.
+    // CRÍTICO: Si la caché está vacía (fue borrada o es primera vez), leer TODAS las filas
+    // para evitar detectar registros antiguos como "nuevos" y reenviar correos duplicados.
     const ultimaFilaHistorial = sheetHistorial.getLastRow();
-    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 200);
-    const startRow = Math.max(2, ultimaFilaHistorial - numFilasLeer + 1);
+    if (ultimaFilaHistorial > 1) {
+      const numFilasLeer = cacheActiva
+        ? Math.min(ultimaFilaHistorial - 1, 200)   // caché OK → solo últimas 200 de respaldo
+        : (ultimaFilaHistorial - 1);                // caché vacía → leer TODO el historial
 
-    Logger.log('📖 Leyendo últimas ' + numFilasLeer + ' filas del historial como respaldo');
+      const startRow = cacheActiva
+        ? Math.max(2, ultimaFilaHistorial - numFilasLeer + 1)
+        : 2;
 
-    const historialData = ejecutarConRetry(
-      function() { return sheetHistorial.getRange(startRow, 1, numFilasLeer, 1).getValues(); },
-      'lectura de historial',
-      5
-    );
+      Logger.log('📖 Leyendo ' + numFilasLeer + ' filas del historial (caché ' +
+        (cacheActiva ? 'activa → respaldo parcial' : 'vacía → lectura completa') + ')');
 
-    historialData.forEach(function(row) { historialIds.add(row[0].toString()); });
+      const historialData = ejecutarConRetry(
+        function() { return sheetHistorial.getRange(startRow, 1, numFilasLeer, 1).getValues(); },
+        'lectura de historial',
+        5
+      );
+      historialData.forEach(function(row) { historialIds.add(row[0].toString()); });
+
+      // Si la caché estaba vacía, reconstruirla ahora con todos los IDs leídos del historial
+      if (!cacheActiva && historialIds.size > 0) {
+        try {
+          const cache = PropertiesService.getScriptProperties();
+          const todosIds = Array.from(historialIds);
+          cache.setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(todosIds.slice(-1000)));
+          Logger.log('💾 Caché reconstruida con ' + todosIds.length + ' IDs del historial');
+        } catch (e) {
+          Logger.log('⚠️ No se pudo reconstruir caché: ' + e.message);
+        }
+      }
+    }
 
     // Filtrar registros que no están en el historial
     const nuevos = datosKobo.slice(1).filter(function(row) {
