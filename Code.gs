@@ -267,54 +267,78 @@ function LIMPIAR_HISTORIAL_DUPLICADOS() {
 
   var lastRow = sheet.getLastRow();
   var datos = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-  var vistos = {}; // clave: nombre+fechaInicio → fila ganadora
-  var filasMantener = [];
 
-  // Primera pasada: por cada combinación nombre+fechaInicio, quedarse con la mejor entrada
-  // Preferencia: tiene nombre real > tiene ID numérico > cualquier otra
+  // ── Paso 1: deduplicar por ID numérico (clave principal de KoboToolbox) ──────
+  // Si dos filas tienen el mismo ID numérico son el mismo envío; se conserva la
+  // que tenga estado "Correo Enviado", o si no, la última que aparece.
+  var vistasPorId = {};   // id → índice de la fila ganadora
   datos.forEach(function(fila, idx) {
-    var nombre = (fila[2] || '').toString().trim();
-    var fechaInicio = (fila[4] || '').toString().trim();
     var id = (fila[0] || '').toString().trim();
-
-    // Ignorar filas completamente vacías
-    if (!nombre && !fechaInicio) return;
-
-    var clave = nombre + '|' + fechaInicio;
-    var tieneNombre = nombre !== '' && nombre !== 'Sin nombre';
     var esNumerico = /^\d+$/.test(id);
+    if (!esNumerico) return; // IDs no numéricos se manejan en el paso 2
 
-    if (!vistos[clave]) {
-      vistos[clave] = { idx: idx, tieneNombre: tieneNombre, esNumerico: esNumerico };
+    var correoEnviado = (fila[7] || '').toString() === 'Correo Enviado';
+    if (!vistasPorId[id]) {
+      vistasPorId[id] = { idx: idx, correoEnviado: correoEnviado };
     } else {
-      var actual = vistos[clave];
-      // Reemplazar si la nueva entrada es mejor (tiene nombre real o ID numérico)
-      var nuevaMejor = (!actual.tieneNombre && tieneNombre) ||
-                       (actual.tieneNombre === tieneNombre && !actual.esNumerico && esNumerico);
-      if (nuevaMejor) {
-        vistos[clave] = { idx: idx, tieneNombre: tieneNombre, esNumerico: esNumerico };
+      // Preferir el registro que ya tiene "Correo Enviado"; si ambos son iguales, quedarse con el último
+      if (!vistasPorId[id].correoEnviado && correoEnviado) {
+        vistasPorId[id] = { idx: idx, correoEnviado: correoEnviado };
+      } else if (vistasPorId[id].correoEnviado === correoEnviado) {
+        vistasPorId[id] = { idx: idx, correoEnviado: correoEnviado }; // último gana
       }
     }
   });
 
-  // Construir lista de índices a mantener
-  var indicesMantener = {};
-  Object.keys(vistos).forEach(function(clave) {
-    indicesMantener[vistos[clave].idx] = true;
+  var indicesMantenerPorId = {};
+  Object.keys(vistasPorId).forEach(function(id) {
+    indicesMantenerPorId[vistasPorId[id].idx] = true;
   });
 
+  // ── Paso 2: deduplicar por nombre+fechaInicio (IDs no numéricos / fallback) ─
+  var vistasPorNombreFecha = {};
   datos.forEach(function(fila, idx) {
-    if (indicesMantener[idx]) filasMantener.push(fila);
+    var id = (fila[0] || '').toString().trim();
+    if (/^\d+$/.test(id)) return; // ya manejado en paso 1
+
+    var nombre = (fila[2] || '').toString().trim();
+    var fechaInicio = (fila[4] || '').toString().trim();
+    if (!nombre && !fechaInicio) return; // fila vacía
+
+    var clave = nombre + '|' + fechaInicio;
+    var tieneNombre = nombre !== '' && nombre !== 'Sin nombre';
+    var correoEnviado = (fila[7] || '').toString() === 'Correo Enviado';
+
+    if (!vistasPorNombreFecha[clave]) {
+      vistasPorNombreFecha[clave] = { idx: idx, tieneNombre: tieneNombre, correoEnviado: correoEnviado };
+    } else {
+      var actual = vistasPorNombreFecha[clave];
+      var nuevaMejor = (!actual.correoEnviado && correoEnviado) ||
+                       (actual.correoEnviado === correoEnviado && !actual.tieneNombre && tieneNombre);
+      if (nuevaMejor) {
+        vistasPorNombreFecha[clave] = { idx: idx, tieneNombre: tieneNombre, correoEnviado: correoEnviado };
+      }
+    }
+  });
+
+  Object.keys(vistasPorNombreFecha).forEach(function(clave) {
+    indicesMantenerPorId[vistasPorNombreFecha[clave].idx] = true;
+  });
+
+  // ── Paso 3: construir lista final de filas a conservar ───────────────────────
+  var filasMantener = [];
+  datos.forEach(function(fila, idx) {
+    if (indicesMantenerPorId[idx]) filasMantener.push(fila);
   });
 
   var eliminados = datos.length - filasMantener.length;
 
-  // Reescribir la hoja: borrar datos viejos y escribir los limpios
+  // ── Paso 4: reescribir la hoja ───────────────────────────────────────────────
   sheet.getRange(2, 1, lastRow - 1, 8).clearContent().setBackground(null);
 
   if (filasMantener.length > 0) {
     sheet.getRange(2, 1, filasMantener.length, 8).setValues(filasMantener);
-    // Colorear verde los que dicen "Correo Enviado"
+    // Restaurar color verde en filas "Correo Enviado"
     filasMantener.forEach(function(fila, i) {
       if ((fila[7] || '').toString() === 'Correo Enviado') {
         sheet.getRange(i + 2, 1, 1, 8).setBackground('#b7e1cd');
@@ -322,10 +346,11 @@ function LIMPIAR_HISTORIAL_DUPLICADOS() {
     });
   }
 
-  // Actualizar caché con los IDs limpios
+  // ── Paso 5: reconstruir caché con los IDs limpios ────────────────────────────
   try {
     var idsLimpios = filasMantener.map(function(f) { return f[0].toString(); });
-    PropertiesService.getScriptProperties().setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimpios));
+    PropertiesService.getScriptProperties().setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimpios.slice(-1000)));
+    Logger.log('💾 Caché reconstruida con ' + idsLimpios.length + ' IDs limpios');
   } catch(e) {
     Logger.log('No se pudo actualizar caché: ' + e.message);
   }
@@ -681,10 +706,23 @@ function agregarAlHistorial(registrosNuevos, headers) {
       'numero dias', 'dias a tomar', 'personal_solicitado'
     ]);
 
-    const ultimaFila = sheet.getLastRow() + 1;
+    // GUARDIA ANTI-DUPLICADOS: leer todos los IDs que ya existen en el historial
+    // para no insertar un registro que ya fue guardado en una ejecución anterior.
+    const idsYaEnHistorial = new Set();
+    const filaActual = sheet.getLastRow();
+    if (filaActual > 1) {
+      const idsExistentes = ejecutarConRetry(
+        function() { return sheet.getRange(2, 1, filaActual - 1, 1).getValues(); },
+        'lectura IDs historial en agregarAlHistorial',
+        5
+      );
+      idsExistentes.forEach(function(row) { idsYaEnHistorial.add(row[0].toString()); });
+    }
+
+    const ultimaFila = filaActual + 1;
     const fechaProceso = new Date();
 
-    const datosHistorial = registrosNuevos.map(function(registro) {
+    const datosHistorialTodos = registrosNuevos.map(function(registro) {
       const idRegistro = (idIndex >= 0 && registro[idIndex] !== undefined && registro[idIndex] !== '')
         ? registro[idIndex].toString()
         : registro.join('|||');
@@ -721,6 +759,20 @@ function agregarAlHistorial(registrosNuevos, headers) {
         'Procesado'
       ];
     });
+
+    // Filtrar: solo escribir los que NO están ya en el historial
+    const datosHistorial = datosHistorialTodos.filter(function(fila) {
+      if (idsYaEnHistorial.has(fila[0].toString())) {
+        Logger.log('⚠️ ID ya existe en historial, omitiendo duplicado: ' + fila[0]);
+        return false;
+      }
+      return true;
+    });
+
+    if (datosHistorial.length === 0) {
+      Logger.log('Todos los registros ya estaban en el historial. Nada nuevo que agregar.');
+      return;
+    }
 
     // OPTIMIZACIÓN CRÍTICA: Escribir todos los registros con retry
     ejecutarConRetry(
