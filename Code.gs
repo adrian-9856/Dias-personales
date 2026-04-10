@@ -253,6 +253,133 @@ function ejecutarAutomatico() {
 }
 
 /**
+ * EJECUTAR UNA VEZ: Limpia el historial eliminando entradas duplicadas.
+ * Mantiene solo un registro por persona+fecha, priorizando los que tienen nombre real
+ * (descarta los "Sin nombre") y los que tienen ID numérico.
+ */
+function LIMPIAR_HISTORIAL_DUPLICADOS() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
+  if (!sheet || sheet.getLastRow() <= 1) {
+    ss.toast('Historial vacío, nada que limpiar.', 'Info', 5);
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  var datos = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  var vistos = {}; // clave: nombre+fechaInicio → fila ganadora
+  var filasMantener = [];
+
+  // Primera pasada: por cada combinación nombre+fechaInicio, quedarse con la mejor entrada
+  // Preferencia: tiene nombre real > tiene ID numérico > cualquier otra
+  datos.forEach(function(fila, idx) {
+    var nombre = (fila[2] || '').toString().trim();
+    var fechaInicio = (fila[4] || '').toString().trim();
+    var id = (fila[0] || '').toString().trim();
+
+    // Ignorar filas completamente vacías
+    if (!nombre && !fechaInicio) return;
+
+    var clave = nombre + '|' + fechaInicio;
+    var tieneNombre = nombre !== '' && nombre !== 'Sin nombre';
+    var esNumerico = /^\d+$/.test(id);
+
+    if (!vistos[clave]) {
+      vistos[clave] = { idx: idx, tieneNombre: tieneNombre, esNumerico: esNumerico };
+    } else {
+      var actual = vistos[clave];
+      // Reemplazar si la nueva entrada es mejor (tiene nombre real o ID numérico)
+      var nuevaMejor = (!actual.tieneNombre && tieneNombre) ||
+                       (actual.tieneNombre === tieneNombre && !actual.esNumerico && esNumerico);
+      if (nuevaMejor) {
+        vistos[clave] = { idx: idx, tieneNombre: tieneNombre, esNumerico: esNumerico };
+      }
+    }
+  });
+
+  // Construir lista de índices a mantener
+  var indicesMantener = {};
+  Object.keys(vistos).forEach(function(clave) {
+    indicesMantener[vistos[clave].idx] = true;
+  });
+
+  datos.forEach(function(fila, idx) {
+    if (indicesMantener[idx]) filasMantener.push(fila);
+  });
+
+  var eliminados = datos.length - filasMantener.length;
+
+  // Reescribir la hoja: borrar datos viejos y escribir los limpios
+  sheet.getRange(2, 1, lastRow - 1, 8).clearContent().setBackground(null);
+
+  if (filasMantener.length > 0) {
+    sheet.getRange(2, 1, filasMantener.length, 8).setValues(filasMantener);
+    // Colorear verde los que dicen "Correo Enviado"
+    filasMantener.forEach(function(fila, i) {
+      if ((fila[7] || '').toString() === 'Correo Enviado') {
+        sheet.getRange(i + 2, 1, 1, 8).setBackground('#b7e1cd');
+      }
+    });
+  }
+
+  // Actualizar caché con los IDs limpios
+  try {
+    var idsLimpios = filasMantener.map(function(f) { return f[0].toString(); });
+    PropertiesService.getScriptProperties().setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimpios));
+  } catch(e) {
+    Logger.log('No se pudo actualizar caché: ' + e.message);
+  }
+
+  Logger.log('Historial limpiado: ' + eliminados + ' duplicados eliminados. Quedan ' + filasMantener.length + ' registros.');
+  ss.toast('Listo: ' + eliminados + ' duplicados eliminados. Historial tiene ' + filasMantener.length + ' registros únicos.', 'LIMPIEZA COMPLETADA', 10);
+}
+
+/**
+ * EJECUTAR UNA VEZ: Elimina triggers duplicados (deja exactamente 1 de ejecutarAutomatico)
+ * y corrige la URL de KoboToolbox en la hoja de Configuracion.
+ */
+function REPARAR_SISTEMA() {
+  // 1. Eliminar triggers duplicados — dejar exactamente 1
+  var triggers = ScriptApp.getProjectTriggers();
+  var encontrado = false;
+  var eliminados = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'ejecutarAutomatico') {
+      if (encontrado) {
+        ScriptApp.deleteTrigger(triggers[i]);
+        eliminados++;
+      } else {
+        encontrado = true;
+      }
+    }
+  }
+  Logger.log('Triggers duplicados eliminados: ' + eliminados + '. Quedó 1 trigger activo.');
+
+  // 2. Corregir la URL en la hoja de Configuracion
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Configuracion') || ss.getSheetByName('Configuración');
+  if (sheet) {
+    var datos = sheet.getRange(1, 1, sheet.getLastRow(), 2).getValues();
+    for (var j = 0; j < datos.length; j++) {
+      var etiqueta = datos[j][0].toString().trim().toLowerCase();
+      if (etiqueta.indexOf('url') >= 0 && etiqueta.indexOf('kobo') >= 0) {
+        var urlActual = datos[j][1].toString().trim();
+        if (urlActual.indexOf('esigRStULsbGhgCaayXsgHC') >= 0) {
+          var urlCorrecta = urlActual.replace('esigRStULsbGhgCaayXsgHC', 'esZcQDf2L5CTmiFETsXyKYZ');
+          sheet.getRange(j + 1, 2).setValue(urlCorrecta);
+          Logger.log('URL corregida: ' + urlCorrecta);
+        } else {
+          Logger.log('URL actual ya es correcta: ' + urlActual);
+        }
+        break;
+      }
+    }
+  }
+
+  ss.toast('Sistema reparado: ' + eliminados + ' trigger(s) duplicado(s) eliminado(s) y URL corregida.', 'REPARADO', 10);
+}
+
+/**
  * Lee un valor de la hoja de configuración buscando la etiqueta en la columna A.
  * Más robusto que leer por celda fija, porque no depende de en qué fila está el dato.
  * @param {Sheet} sheet - Hoja de configuración
@@ -410,22 +537,33 @@ function detectarRegistrosNuevos(datosKobo) {
       return datosKobo.slice(1);
     }
 
-    // OPTIMIZACIÓN AGRESIVA: Reducir a 100 registros para documentos muy grandes
-    // Si tu historial tiene miles de filas, esto evita timeout crítico
+    // Leer IDs desde la caché de PropertiesService (hasta 1000 IDs)
+    var historialIds = new Set();
+    try {
+      const cache = PropertiesService.getScriptProperties();
+      const cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
+      if (cachedIds) {
+        JSON.parse(cachedIds).forEach(function(id) { historialIds.add(id.toString()); });
+        Logger.log('💾 Caché cargada: ' + historialIds.size + ' IDs');
+      }
+    } catch (e) {
+      Logger.log('⚠️ No se pudo leer caché: ' + e.message);
+    }
+
+    // Complementar con las últimas 200 filas del historial (por si la caché está incompleta)
     const ultimaFilaHistorial = sheetHistorial.getLastRow();
-    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 100); // REDUCIDO de 1000 a 100
+    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 200);
     const startRow = Math.max(2, ultimaFilaHistorial - numFilasLeer + 1);
 
-    Logger.log('📖 Leyendo últimos ' + numFilasLeer + ' IDs del historial (de ' + (ultimaFilaHistorial - 1) + ' totales)');
+    Logger.log('📖 Leyendo últimas ' + numFilasLeer + ' filas del historial como respaldo');
 
-    // OPTIMIZACIÓN: Usar retry automático con MÁS intentos y MAYOR delay
     const historialData = ejecutarConRetry(
       function() { return sheetHistorial.getRange(startRow, 1, numFilasLeer, 1).getValues(); },
       'lectura de historial',
-      5  // AUMENTADO de 3 a 5 reintentos
+      5
     );
 
-    const historialIds = new Set(historialData.map(function(row) { return row[0].toString(); }));
+    historialData.forEach(function(row) { historialIds.add(row[0].toString()); });
 
     // Filtrar registros que no están en el historial
     const nuevos = datosKobo.slice(1).filter(function(row) {
@@ -437,9 +575,9 @@ function detectarRegistrosNuevos(datosKobo) {
     return nuevos;
 
   } catch (error) {
-    Logger.log('Error en detectarRegistrosNuevos: ' + error.message);
-    // Si hay error, procesar todos para no perder datos
-    return datosKobo.slice(1);
+    Logger.log('Error en detectarRegistrosNuevos: ' + error.message + ' — devolviendo [] para evitar correos duplicados');
+    // SEGURO: devolver vacío en caso de error para NO enviar correos por accidente
+    return [];
   }
 }
 
@@ -578,14 +716,12 @@ function agregarAlHistorial(registrosNuevos, headers) {
       const cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
       const nuevosIDs = datosHistorial.map(function(fila) { return fila[0]; });
 
-      if (cachedIds) {
-        const idsActuales = JSON.parse(cachedIds);
-        const idsActualizados = idsActuales.concat(nuevosIDs);
-        // Mantener solo los últimos 1000 IDs para no exceder límite de propiedades
-        const idsLimitados = idsActualizados.slice(-1000);
-        cache.setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimitados));
-        Logger.log('💾 Caché actualizado con ' + nuevosIDs.length + ' nuevos IDs (total: ' + idsLimitados.length + ')');
-      }
+      const idsActuales = cachedIds ? JSON.parse(cachedIds) : [];
+      const idsActualizados = idsActuales.concat(nuevosIDs);
+      // Mantener solo los últimos 1000 IDs para no exceder límite de propiedades
+      const idsLimitados = idsActualizados.slice(-1000);
+      cache.setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimitados));
+      Logger.log('💾 Caché actualizado con ' + nuevosIDs.length + ' nuevos IDs (total: ' + idsLimitados.length + ')');
     } catch (e) {
       Logger.log('⚠️ No se pudo actualizar caché: ' + e.message);
     }
@@ -1832,10 +1968,24 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var diasEstaSolicitud = regs.reduce(function(sum, r) {
         var d = 0;
         if (colDiasSolicitados >= 0) {
-          d = parseInt((r[colDiasSolicitados] || '0').toString().trim(), 10);
+          d = parseInt((r[colDiasSolicitados] || '0').toString().trim(), 10) || 0;
         }
         if (d === 0) {
-          Logger.log('ADVERTENCIA: Días = 0 para ' + nombreEmpleado + ' (campo "días solicitados" vacío o no encontrado)');
+          // Fallback: calcular días entre fechas
+          var fi = colFechaInicio >= 0 ? r[colFechaInicio] : '';
+          var ff = colFechaFin >= 0 ? r[colFechaFin] : '';
+          if (fi && ff) {
+            try {
+              var dInicio = new Date(fi);
+              var dFin = new Date(ff);
+              if (!isNaN(dInicio.getTime()) && !isNaN(dFin.getTime())) {
+                d = Math.round((dFin - dInicio) / (1000 * 60 * 60 * 24)) + 1;
+                if (d < 1) d = 1;
+              }
+            } catch(e) { d = 1; }
+          }
+          if (d === 0) d = 1;
+          Logger.log('ADVERTENCIA: Días solicitados no numérico para ' + nombreEmpleado + ', usando cálculo: ' + d);
         }
         return sum + d;
       }, 0);
@@ -2443,38 +2593,32 @@ function crearHojaDirectores() {
  */
 function onOpen() {
   try {
-    const ui = SpreadsheetApp.getUi();
+    var ui = SpreadsheetApp.getUi();
     ui.createMenu('Días Personales')
-      .addItem('🚀 Instalar Todo (1 clic)', 'instalarTodo')
-      .addSeparator()
       .addItem('🆕 Buscar Nuevos Registros', 'buscarNuevosRegistros')
-      .addItem('🔃 Actualizar Todo (sin borrar nada)', 'actualizarTodo')
-      .addItem('🔄 Actualizar Lista de Empleados', 'actualizarEmpleados')
+      .addItem('🔃 Actualizar Todo', 'actualizarTodo')
       .addSeparator()
-      .addItem('⚙ Crear/Actualizar Configuración', 'crearHojaConfiguracion')
-      .addItem('👥 Configurar Directores', 'crearHojaDirectores')
-      .addItem('👤 Configurar Plantilla de Empleados', 'crearHojaPlantillaEmpleados')
-      .addItem('➕ Agregar Nuevo Empleado', 'agregarNuevoEmpleado')
-      .addItem('⏰ Configurar Trigger Automático', 'configurarTriggerAutomatico')
-      .addItem('🛑 Desactivar Triggers Automáticos', 'desactivarTriggersAutomaticos')
+      .addItem('📧 Reenviar Correo Individual', 'reenviarCorreoIndividual')
+      .addItem('📬 Reenviar Correos a TODOS', 'reenviarTodosLosCorreos')
+      .addItem('📊 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
       .addSeparator()
-      .addItem('🗑️ Limpiar Caché (si hay problemas)', 'limpiarCacheIDs')
-      .addItem('🔧 Corregir URL de KoboToolbox', 'corregirURLKoboToolbox')
-      .addItem('📊 Diagnosticar Documento (ver tamaño)', 'diagnosticarDocumento')
+      .addItem('⚙ Configuración', 'crearHojaConfiguracion')
+      .addItem('👥 Directores', 'crearHojaDirectores')
+      .addItem('👤 Plantilla Empleados', 'crearHojaPlantillaEmpleados')
+      .addItem('➕ Agregar Empleado', 'agregarNuevoEmpleado')
+      .addItem('🔄 Actualizar Empleados', 'actualizarEmpleados')
       .addSeparator()
-      .addItem('📧 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
-      .addItem('📬 Reenviar Correo Individual', 'reenviarCorreoIndividual')
-      .addItem('🔍 Ver Estructura de Datos Kobo', 'diagnosticarEstructuraKobo')
+      .addItem('🔧 Reinstalar Paso 1 (Limpiar)', 'reinstalar_paso1_limpiar')
+      .addItem('🔧 Reinstalar Paso 2 (Configurar)', 'reinstalar_paso2_configurar')
+      .addItem('🔧 Reinstalar Paso 3 (Activar)', 'reinstalar_paso3_activar')
+      .addItem('🛑 Desactivar Triggers', 'desactivarTriggersAutomaticos')
       .addSeparator()
-      .addItem('✅ INSTALAR TODO DESDE CERO', 'instalarTodoDesdeAmbienteLimpio')
-      .addItem('❌ DESINSTALAR TODO', 'desinstalarTodoElSistema')
-      .addItem('🔁 Reinstalar Sistema Completo', 'reinstalarSistema')
-      .addSeparator()
+      .addItem('🗑️ Limpiar Caché', 'limpiarCacheIDs')
+      .addItem('📊 Diagnosticar Documento', 'diagnosticarDocumento')
+      .addItem('🔍 Ver Estructura Kobo', 'diagnosticarEstructuraKobo')
       .addItem('ℹ Ayuda', 'mostrarAyuda')
       .addToUi();
   } catch (e) {
-    // onOpen fue llamada fuera del contexto del spreadsheet (ej: editor de Apps Script).
-    // No hay nada que hacer; el menú solo existe cuando se abre el Sheet.
     Logger.log('onOpen: sin contexto de UI (' + e.message + ')');
   }
 }
@@ -2700,408 +2844,207 @@ function actualizarTodo() {
   ss.toast('✅ Datos actualizados el ' + fechaAhora, 'Última actualización', 8);
 }
 
+// ============================================================
+// REINSTALACIÓN RÁPIDA - Dividida en 3 pasos (NO causa timeout)
+// Ejecutar desde Apps Script en orden: paso1, paso2, paso3
+// ============================================================
+
 /**
- * Instala y configura el sistema completo en un solo clic, sin ningún paso manual.
- *
- * Pasos que realiza automáticamente:
- *   1. Recrea todas las hojas del sistema
- *   2. Rellena el token de KoboToolbox y el correo de administrador desde CONFIG
- *   3. Activa el envío de correos
- *   4. Carga los directores y la plantilla de empleados
- *   5. Configura el trigger automático (cada 1 minuto)
- *   6. Ejecuta la primera sincronización de datos
+ * PASO 1: Limpiar hojas y eliminar triggers (rápido, ~5 segundos)
+ * Ejecuta esto PRIMERO
  */
-function instalarTodo() {
-  // OPTIMIZACIÓN CRÍTICA: Usar retry desde el inicio
-  const ss = obtenerSpreadsheetConRetry();
-  const toast = function(msg) {
-    try {
-      ss.toast(msg, 'Instalación', 10);
-    } catch(e) {
-      // Si toast falla, continuar sin él
+function reinstalar_paso1_limpiar() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Eliminar triggers viejos
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'ejecutarAutomatico') {
+      ScriptApp.deleteTrigger(triggers[i]);
     }
-  };
-
-  try {
-    toast('Paso 1/6 — Preparando hojas...');
-    Utilities.sleep(1000); // PAUSA INICIAL: Dar tiempo al documento
-
-    // ── 1. Crear hoja temporal si todas las hojas son del sistema ────────────
-    // El Historial NO se borra para evitar reenviar correos de solicitudes antiguas
-    const hojasABorrar = [
-      CONFIG.SHEET_NAME_CONFIG, CONFIG.SHEET_NAME_DIRECTORES,
-      CONFIG.SHEET_NAME_PLANTILLA, CONFIG.SHEET_NAME_DATOS,
-      CONFIG.SHEET_NAME_RESUMEN
-    ];
-    const hojasDelSistema = hojasABorrar.concat([CONFIG.SHEET_NAME_HISTORIAL]);
-    const todasLasHojas = ss.getSheets();
-    const hojasExternas = todasLasHojas.filter(function(h) {
-      return hojasDelSistema.indexOf(h.getName()) === -1;
-    });
-    let hojaTemporal = null;
-    if (hojasExternas.length === 0) {
-      hojaTemporal = ss.insertSheet('_temporal_');
-      Utilities.sleep(500);
-    }
-
-    // OPTIMIZACIÓN: Eliminar hojas CON PAUSAS entre cada eliminación
-    hojasABorrar.forEach(function(nombre) {
-      try {
-        const hoja = ss.getSheetByName(nombre);
-        if (hoja) {
-          ejecutarConRetry(
-            function() { ss.deleteSheet(hoja); },
-            'eliminar hoja ' + nombre,
-            3
-          );
-          Logger.log('✅ Hoja eliminada: ' + nombre);
-          Utilities.sleep(500); // PAUSA: Entre cada eliminación
-        }
-      } catch (e) {
-        Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
-      }
-    });
-    SpreadsheetApp.flush();
-    Utilities.sleep(1000); // AUMENTADO: Más tiempo después de eliminar hojas
-
-    // ── 2. Eliminar triggers anteriores ──────────────────────────────────────
-    ScriptApp.getProjectTriggers().forEach(function(t) {
-      if (t.getHandlerFunction() === 'ejecutarAutomatico') ScriptApp.deleteTrigger(t);
-    });
-    Utilities.sleep(500);
-
-    // ── 3. Crear hoja de Configuración y rellenar valores automáticamente ────
-    toast('Paso 2/5 — Creando configuración...');
-    ejecutarConRetry(
-      function() { crearHojaConfiguracion(); },
-      'crear hoja de configuración',
-      5
-    );
-    SpreadsheetApp.flush();
-    Utilities.sleep(1000); // AUMENTADO
-
-    const sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
-    if (sheetConfig) {
-      ejecutarConRetry(
-        function() {
-          // Fila 3: Token KoboToolbox
-          sheetConfig.getRange('B3').setValue(CONFIG.KOBO_TOKEN_DEFAULT);
-          // Fila 6: Activar envío de correos
-          sheetConfig.getRange('B6').setValue('TRUE');
-          // Fila 7: Correo del administrador
-          sheetConfig.getRange('B7').setValue(CONFIG.ADMIN_EMAIL_DEFAULT);
-        },
-        'rellenar configuración',
-        3
-      );
-      Utilities.sleep(500);
-    }
-
-    // ── 4. Crear hojas de Directores y Plantilla de Empleados ────────────────
-    toast('Paso 3/5 — Configurando directores y empleados...');
-    ejecutarConRetry(
-      function() { crearHojaDirectores(); },
-      'crear hoja de directores',
-      5
-    );
-    SpreadsheetApp.flush();
-    Utilities.sleep(1000); // AUMENTADO
-
-    ejecutarConRetry(
-      function() { crearHojaPlantillaEmpleados(); },
-      'crear plantilla de empleados',
-      5
-    );
-    SpreadsheetApp.flush();
-    Utilities.sleep(1000); // AUMENTADO
-
-    // ── 5. Crear hojas vacías para Datos, Resumen e Historial ────────────────
-    toast('Paso 4/5 — Creando hojas de datos...');
-    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
-      if (!ss.getSheetByName(nombre)) {
-        ejecutarConRetry(
-          function() { ss.insertSheet(nombre); },
-          'crear hoja ' + nombre,
-          3
-        );
-        Utilities.sleep(500);
-      }
-    });
-
-    // Eliminar hoja temporal si se creó
-    if (hojaTemporal) {
-      ejecutarConRetry(
-        function() { ss.deleteSheet(hojaTemporal); },
-        'eliminar hoja temporal',
-        3
-      );
-    }
-    SpreadsheetApp.flush();
-    Utilities.sleep(1000);
-
-    // ── 6. Configurar trigger automático (cada 1 minuto) ─────────────────────
-    toast('Paso 5/5 — Activando trigger automático...');
-    ScriptApp.newTrigger('ejecutarAutomatico')
-      .timeBased()
-      .everyMinutes(1)
-      .create();
-
-    // NO ejecutar sincronización automática aquí para evitar timeout
-    // El trigger lo hará en 1 minuto, o el usuario puede hacerlo manualmente
-    toast('Paso 5/5 — Listo.');
-    const hojaResumen = ss.getSheetByName(CONFIG.SHEET_NAME_RESUMEN);
-    if (hojaResumen) ss.setActiveSheet(hojaResumen);
-
-    Logger.log('instalarTodo completado exitosamente');
-    ss.toast('Sistema instalado. Usa "Buscar Nuevos Registros" para sincronizar datos.', '✅ Instalación completa', 15);
-
-  } catch (error) {
-    Logger.log('Error en instalarTodo: ' + error.message);
-    Logger.log('Stack: ' + error.stack);
-    SpreadsheetApp.getUi().alert(
-      '❌ Error durante la instalación',
-      'Error: ' + error.message + '\n\n' +
-      '💡 SOLUCIÓN:\n' +
-      'Este error es común en documentos grandes.\n\n' +
-      'USA EN SU LUGAR:\n' +
-      '📋 Instalación Paso a Paso (RECOMENDADO)\n\n' +
-      'Esa opción NUNCA falla porque hace una cosa a la vez.\n\n' +
-      'Detalles técnicos en:\n' +
-      'Extensiones → Apps Script → Registros',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
   }
+  Logger.log('Triggers eliminados');
+
+  // Limpiar contenido de hojas (NO borrarlas - eso causa timeout)
+  var hojasALimpiar = [
+    CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL,
+    CONFIG.SHEET_NAME_CONFIG, CONFIG.SHEET_NAME_DIRECTORES, CONFIG.SHEET_NAME_PLANTILLA
+  ];
+  for (var i = 0; i < hojasALimpiar.length; i++) {
+    var hoja = ss.getSheetByName(hojasALimpiar[i]);
+    if (hoja) {
+      hoja.clear();
+      Logger.log('Limpiada: ' + hojasALimpiar[i]);
+    }
+  }
+
+  // Limpiar cache de IDs procesados
+  var props = PropertiesService.getScriptProperties();
+  props.deleteProperty('PROCESADOS_IDS');
+  props.deleteProperty('ULTIMO_ID_PROCESADO');
+  props.deleteProperty('IDS_PROCESADOS_CACHE');
+  Logger.log('Cache de IDs limpiada');
+
+  SpreadsheetApp.flush();
+  ss.toast('PASO 1 completado. Ahora ejecuta reinstalar_paso2_configurar()', 'Paso 1 OK', 10);
+  Logger.log('=== PASO 1 COMPLETADO === Ahora ejecuta reinstalar_paso2_configurar()');
 }
 
 /**
- * Reinstala el sistema completo:
- * 1. Elimina todas las hojas del sistema
- * 2. Recrea hojas de Configuración y Directores desde cero
- * 3. Elimina triggers anteriores
- * 4. Configura trigger automático
- * 5. Guía al usuario para completar el token
+ * PASO 2: Recrear Configuración + Directores + Plantilla (~10 segundos)
+ * Ejecuta esto DESPUÉS del paso 1
  */
-function reinstalarSistema() {
-  const ui = SpreadsheetApp.getUi();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function reinstalar_paso2_configurar() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // Confirmación con advertencia clara
-  const confirmacion = ui.alert(
-    '⚠ Reinstalar Sistema Completo',
-    'Esto eliminará y recreará las siguientes hojas:\n\n' +
-    '  • ' + CONFIG.SHEET_NAME_CONFIG + '\n' +
-    '  • ' + CONFIG.SHEET_NAME_DIRECTORES + '\n' +
-    '  • ' + CONFIG.SHEET_NAME_PLANTILLA + '\n' +
-    '  • ' + CONFIG.SHEET_NAME_DATOS + '\n' +
-    '  • ' + CONFIG.SHEET_NAME_RESUMEN + '\n\n' +
-    '✅ El Historial de correos enviados se conservará para no reenviar notificaciones.\n\n' +
+  // --- HOJA CONFIGURACIÓN ---
+  var sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+  if (!sheetConfig) sheetConfig = ss.insertSheet(CONFIG.SHEET_NAME_CONFIG);
+
+  sheetConfig.getRange('A1').setValue('CONFIGURACIÓN DEL SISTEMA').setFontSize(14).setFontWeight('bold');
+  sheetConfig.getRange('A2').setValue('Completa los campos marcados con (*)').setFontStyle('italic');
+
+  var configData = [
+    ['Token KoboToolbox: (*)',       CONFIG.KOBO_TOKEN_DEFAULT],
+    ['URL API KoboToolbox:',         CONFIG.KOBO_API_URL],
+    ['Días personales totales:',     CONFIG.DIAS_TOTALES],
+    ['Enviar correos (TRUE/FALSE):', 'TRUE'],
+    ['Correo del administrador: (*)', CONFIG.ADMIN_EMAIL_DEFAULT]
+  ];
+  sheetConfig.getRange(3, 1, configData.length, 2).setValues(configData);
+  sheetConfig.getRange(3, 1, configData.length, 1).setFontWeight('bold');
+  sheetConfig.getRange('A3:B3').setBackground('#fff3cd');
+  sheetConfig.getRange('A7:B7').setBackground('#fff3cd');
+  sheetConfig.setColumnWidth(1, 300);
+  sheetConfig.setColumnWidth(2, 500);
+  Logger.log('Configuración creada con correos activados (TRUE)');
+
+  // --- HOJA DIRECTORES ---
+  var sheetDir = ss.getSheetByName(CONFIG.SHEET_NAME_DIRECTORES);
+  if (!sheetDir) sheetDir = ss.insertSheet(CONFIG.SHEET_NAME_DIRECTORES);
+
+  sheetDir.getRange('A1').setValue('MAPEO DE EQUIPOS A DIRECTORES').setFontSize(14).setFontWeight('bold');
+  sheetDir.getRange(2, 1, 1, 3).setValues([['Equipo/Programa', 'Nombre del Director', 'Correo del Director']]).setFontWeight('bold');
+
+  var directores = CONFIG.EQUIPOS.map(function(equipo) {
+    var dir = CONFIG.DIRECTORES_DEFAULT[equipo] || { nombre: '', correo: '' };
+    return [equipo, dir.nombre, dir.correo];
+  });
+  sheetDir.getRange(3, 1, directores.length, 3).setValues(directores);
+  sheetDir.setColumnWidth(1, 220);
+  sheetDir.setColumnWidth(2, 300);
+  sheetDir.setColumnWidth(3, 280);
+  Logger.log('Directores creados');
+
+  // --- HOJA PLANTILLA DE EMPLEADOS ---
+  crearHojaPlantillaEmpleados();
+  Logger.log('Plantilla creada');
+
+  // Crear hojas vacías si no existen
+  if (!ss.getSheetByName(CONFIG.SHEET_NAME_DATOS)) ss.insertSheet(CONFIG.SHEET_NAME_DATOS);
+  if (!ss.getSheetByName(CONFIG.SHEET_NAME_RESUMEN)) ss.insertSheet(CONFIG.SHEET_NAME_RESUMEN);
+  if (!ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL)) ss.insertSheet(CONFIG.SHEET_NAME_HISTORIAL);
+
+  SpreadsheetApp.flush();
+  ss.toast('PASO 2 completado. Ahora ejecuta reinstalar_paso3_activar()', 'Paso 2 OK', 10);
+  Logger.log('=== PASO 2 COMPLETADO === Ahora ejecuta reinstalar_paso3_activar()');
+}
+
+/**
+ * PASO 3: Activar trigger + primera carga de datos (~15 segundos)
+ * Ejecuta esto DESPUÉS del paso 2
+ */
+function reinstalar_paso3_activar() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Configurar trigger automático cada 1 minuto
+  ScriptApp.newTrigger('ejecutarAutomatico')
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+  Logger.log('Trigger configurado (cada 1 minuto)');
+
+  // Ejecutar el sistema por primera vez
+  ss.toast('Cargando datos de KoboToolbox...', 'Procesando', 30);
+  ejecutarSistema();
+
+  ss.toast('Sistema reinstalado y funcionando. Para reenviar correos: reenviarTodosLosCorreos()', 'LISTO', 15);
+  Logger.log('=== PASO 3 COMPLETADO === Sistema reinstalado exitosamente');
+  Logger.log('Para reenviar correos a TODOS, ejecuta: reenviarTodosLosCorreos()');
+}
+
+/**
+ * Reenviar correos a TODOS los empleados que ya pidieron días personales.
+ * Ejecutar DESPUÉS del paso 3 si quieres que todos reciban su notificación.
+ */
+function reenviarTodosLosCorreos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  // Verificar que correos estén activados
+  var sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+  var enviarCorreos = leerConfigPorEtiqueta(sheetConfig, 'Enviar correos (TRUE/FALSE):', 'FALSE');
+  if (enviarCorreos.toString().toUpperCase() !== 'TRUE') {
+    ui.alert('Los correos están desactivados. Cambia "Enviar correos" a TRUE en la hoja Configuración.');
+    return;
+  }
+
+  var confirmacion = ui.alert(
+    'Reenviar correos a TODOS',
+    'Esto enviará correos de notificación a TODOS los empleados que tienen solicitudes.\n\n' +
+    '• Cada empleado recibirá un correo con su saldo actual\n' +
+    '• Cada director recibirá las notificaciones de su equipo\n\n' +
     '¿Deseas continuar?',
     ui.ButtonSet.YES_NO
   );
 
-  if (confirmacion !== ui.Button.YES) {
-    ui.alert('Reinstalación cancelada.', '', ui.ButtonSet.OK);
+  if (confirmacion !== ui.Button.YES) return;
+
+  ss.toast('Obteniendo datos de KoboToolbox...', 'Procesando', 30);
+
+  var datosKobo = obtenerDatosKoboToolbox();
+  if (!datosKobo || datosKobo.length <= 1) {
+    ui.alert('No hay datos en KoboToolbox');
     return;
   }
 
-  const ss2 = SpreadsheetApp.getActiveSpreadsheet();
+  var headers = datosKobo[0];
+  var registros = datosKobo.slice(1);
+  var datosProcessados = procesarDatos(datosKobo);
 
-  try {
-    // ── PASO 1: Eliminar hojas del sistema (excepto Historial para no reenviar correos) ────
-    const hojasASistema = [
-      CONFIG.SHEET_NAME_CONFIG,
-      CONFIG.SHEET_NAME_DIRECTORES,
-      CONFIG.SHEET_NAME_PLANTILLA,
-      CONFIG.SHEET_NAME_DATOS,
-      CONFIG.SHEET_NAME_RESUMEN
-    ];
+  ss.toast('Enviando correos... (' + registros.length + ' registros)', 'Procesando', 60);
 
-    // Asegurarse de que quede al menos una hoja activa en el spreadsheet
-    // antes de borrar (Google Sheets requiere mínimo una hoja)
-    const todasLasHojas = ss2.getSheets();
-    const hojasQueQuedan = todasLasHojas.filter(function(h) {
-      return hojasASistema.indexOf(h.getName()) === -1;
-    });
+  enviarNotificacionNuevoRegistro(registros, headers, datosProcessados);
 
-    // Si todas las hojas son del sistema, crear una hoja temporal primero
-    let hojaTemporal = null;
-    if (hojasQueQuedan.length === 0) {
-      hojaTemporal = ss2.insertSheet('_temporal_');
-    }
-
-    // Eliminar hojas del sistema (try/catch individual para que si una falla, siga con las demás)
-    hojasASistema.forEach(function(nombre) {
-      try {
-        const hoja = ss2.getSheetByName(nombre);
-        if (hoja) {
-          ss2.deleteSheet(hoja);
-          Logger.log('✅ Hoja eliminada: ' + nombre);
-        } else {
-          Logger.log('ℹ️ Hoja no encontrada (ya no existe): ' + nombre);
-        }
-      } catch (e) {
-        Logger.log('⚠️ Error al eliminar hoja "' + nombre + '": ' + e.message);
-      }
-    });
-    SpreadsheetApp.flush(); // Asegurar que las eliminaciones se apliquen
-
-    // ── PASO 2: Eliminar triggers anteriores ─────────────────────────────────
-    const triggers = ScriptApp.getProjectTriggers();
-    triggers.forEach(function(trigger) {
-      if (trigger.getHandlerFunction() === 'ejecutarAutomatico') {
-        ScriptApp.deleteTrigger(trigger);
-      }
-    });
-    Logger.log('Triggers eliminados');
-
-    // ── PASO 3: Recrear hoja de Configuración ────────────────────────────────
-    crearHojaConfiguracion();
-    SpreadsheetApp.flush();
-
-    // ── PASO 4: Recrear hoja de Directores y Plantilla de Empleados ──────────
-    crearHojaDirectores();
-    SpreadsheetApp.flush();
-    crearHojaPlantillaEmpleados();
-    SpreadsheetApp.flush();
-
-    // ── PASO 5: Crear hojas vacías para Datos y Resumen (Historial se conserva) ─────────
-    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN].forEach(function(nombre) {
-      if (!ss2.getSheetByName(nombre)) {
-        ss2.insertSheet(nombre);
-        Logger.log('Hoja creada vacía: ' + nombre);
-      }
-    });
-
-    // ── PASO 6: Eliminar hoja temporal si se creó ─────────────────────────────
-    if (hojaTemporal) {
-      ss2.deleteSheet(hojaTemporal);
-    }
-    SpreadsheetApp.flush();
-
-    // ── PASO 7: Configurar trigger automático ─────────────────────────────────
-    ScriptApp.newTrigger('ejecutarAutomatico')
-      .timeBased()
-      .everyMinutes(1)
-      .create();
-    Logger.log('Trigger automático configurado (cada 1 minuto)');
-
-    // ── PASO 8: Activar hoja de Configuración para que el usuario la vea ─────
-    const hojaConfig = ss2.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
-    if (hojaConfig) {
-      ss2.setActiveSheet(hojaConfig);
-    }
-
-    // Mensaje final con instrucciones
-    ui.alert(
-      '✅ Sistema reinstalado correctamente',
-      'Todo está listo. Ahora debes completar 2 pasos:\n\n' +
-      '1. En la hoja "Configuración" (ya abierta):\n' +
-      '   → Escribe tu token de KoboToolbox en la celda amarilla "Token KoboToolbox: (*)"\n' +
-      '   → Escribe tu correo en la celda amarilla "Correo del administrador: (*)"\n\n' +
-      '2. En la hoja "Directores":\n' +
-      '   → Completa el nombre y correo de cada director\n\n' +
-      '3. Cuando termines, ve al menú > "▶ Actualizar Datos Manualmente" para probar.\n\n' +
-      'El trigger automático ya está activo (cada 1 minuto).',
-      ui.ButtonSet.OK
-    );
-
-    Logger.log('Reinstalación completada exitosamente');
-
-  } catch (error) {
-    Logger.log('Error en reinstalarSistema: ' + error.message);
-    ui.alert(
-      'Error durante la reinstalación',
-      'Ocurrió un error: ' + error.message + '\n\nRevisa el log en Extensiones > Apps Script > Registros.',
-      ui.ButtonSet.OK
-    );
+  var totalEmpleados = {};
+  for (var i = 0; i < registros.length; i++) {
+    var nombre = extraerNombreDeFila(headers, registros[i]);
+    totalEmpleados[nombre] = true;
   }
-}
 
-/**
- * Configura el trigger automático para ejecutar el sistema cada 1 minuto
- */
-function configurarTriggerAutomatico() {
-  const ui = SpreadsheetApp.getUi();
-
-  const respuesta = ui.alert(
-    'Configurar Ejecución Automática',
-    '¿Deseas que el sistema verifique nuevos registros automáticamente cada 1 minuto?\n\n' +
-    'Esto permitirá detectar y procesar nuevas solicitudes de días personales en tiempo real.',
-    ui.ButtonSet.YES_NO
+  ui.alert(
+    'Correos enviados',
+    'Se procesaron ' + registros.length + ' solicitudes de ' + Object.keys(totalEmpleados).length + ' empleados.\n\n' +
+    'Revisa los logs para ver el detalle.',
+    ui.ButtonSet.OK
   );
-
-  if (respuesta === ui.Button.YES) {
-    // Eliminar triggers existentes de esta función para evitar duplicados
-    const triggers = ScriptApp.getProjectTriggers();
-    triggers.forEach(function(trigger) {
-      if (trigger.getHandlerFunction() === 'ejecutarAutomatico') {
-        ScriptApp.deleteTrigger(trigger);
-      }
-    });
-
-    // Crear nuevo trigger cada 1 minuto
-    ScriptApp.newTrigger('ejecutarAutomatico')
-      .timeBased()
-      .everyMinutes(1)
-      .create();
-
-    ui.alert(
-      'Trigger Configurado',
-      'El sistema verificará nuevos registros cada 1 minuto automáticamente.\n\n' +
-      'Puedes ver y gestionar los triggers en: Extensiones > Apps Script > Triggers (ícono del reloj)',
-      ui.ButtonSet.OK
-    );
-  }
+  Logger.log('=== REENVÍO COMPLETADO === ' + registros.length + ' registros, ' + Object.keys(totalEmpleados).length + ' empleados');
 }
 
 /**
- * Desactiva todos los triggers automáticos del sistema.
- * Útil para detener las ejecuciones automáticas si están causando problemas.
+ * Desactivar todos los triggers automáticos
  */
 function desactivarTriggersAutomaticos() {
-  const ui = SpreadsheetApp.getUi();
-
-  const respuesta = ui.alert(
-    'Desactivar Ejecución Automática',
-    '¿Deseas desactivar TODOS los triggers automáticos del sistema?\n\n' +
-    'Esto detendrá las verificaciones automáticas de nuevos registros.\n' +
-    'Podrás usar el webhook o ejecutar el sistema manualmente desde el menú.',
-    ui.ButtonSet.YES_NO
-  );
-
-  if (respuesta === ui.Button.YES) {
-    try {
-      // Eliminar TODOS los triggers del proyecto
-      const triggers = ScriptApp.getProjectTriggers();
-      let count = 0;
-
-      triggers.forEach(function(trigger) {
-        ScriptApp.deleteTrigger(trigger);
-        count++;
-      });
-
-      ui.alert(
-        '✅ Triggers Desactivados',
-        'Se eliminaron ' + count + ' trigger(s) automático(s).\n\n' +
-        'El sistema ya NO se ejecutará automáticamente.\n\n' +
-        'Puedes:\n' +
-        '• Usar el webhook de KoboToolbox para ejecución instantánea\n' +
-        '• Ejecutar manualmente desde el menú "Buscar Nuevos Registros"\n' +
-        '• Reactivar los triggers con "Configurar Trigger Automático"',
-        ui.ButtonSet.OK
-      );
-
-      Logger.log('Todos los triggers fueron eliminados exitosamente (' + count + ' trigger(s))');
-
-    } catch (error) {
-      ui.alert(
-        '❌ Error',
-        'No se pudieron eliminar los triggers:\n\n' + error.message,
-        ui.ButtonSet.OK
-      );
-      Logger.log('Error al eliminar triggers: ' + error.message);
+  var triggers = ScriptApp.getProjectTriggers();
+  var eliminados = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'ejecutarAutomatico') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      eliminados++;
     }
   }
+  Logger.log('Triggers eliminados: ' + eliminados);
+  SpreadsheetApp.getActiveSpreadsheet().toast(eliminados + ' trigger(s) eliminado(s)', 'Triggers', 5);
 }
 
 /**
@@ -3399,364 +3342,6 @@ function mostrarAyuda() {
   const htmlOutput = HtmlService.createHtmlOutput(html).setWidth(620).setHeight(550);
   SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Ayuda - Sistema de Días Personales');
 }
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * FUNCIONES DE DESINSTALACIÓN E INSTALACIÓN COMPLETA
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
-/**
- * ❌ DESINSTALAR TODO EL SISTEMA
- * Borra TODAS las hojas del sistema (incluyendo Historial) y triggers
- */
-function desinstalarTodoElSistema() {
-  var ui = SpreadsheetApp.getUi();
-
-  var confirmacion = ui.alert(
-    '🚨 DESINSTALAR TODO EL SISTEMA',
-    '⚠️ ADVERTENCIA: Esto eliminará PERMANENTEMENTE:\n\n' +
-    '  ❌ Configuración\n' +
-    '  ❌ Historial de Solicitudes\n' +
-    '  ❌ Plantilla de Empleados\n' +
-    '  ❌ Directores\n' +
-    '  ❌ Datos KoboToolbox\n' +
-    '  ❌ Resumen\n' +
-    '  ❌ Todos los triggers automáticos\n' +
-    '  ❌ Menú "Días Personales"\n\n' +
-    '🔥 NO SE PUEDE DESHACER ESTA ACCIÓN\n\n' +
-    '¿Estás SEGURO de que quieres BORRAR TODO?',
-    ui.ButtonSet.YES_NO
-  );
-
-  if (confirmacion !== ui.Button.YES) {
-    ui.alert('✅ Cancelado', 'No se eliminó nada.', ui.ButtonSet.OK);
-    return;
-  }
-
-  try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-    Logger.log('═══════════════════════════════════════════════════════');
-    Logger.log('🔥 INICIANDO DESINSTALACIÓN COMPLETA');
-    Logger.log('═══════════════════════════════════════════════════════');
-
-    // PASO 1: Eliminar todos los triggers
-    toast('Eliminando triggers automáticos...', 3);
-    var triggers = ScriptApp.getProjectTriggers();
-    Logger.log('Triggers encontrados: ' + triggers.length);
-
-    for (var i = 0; i < triggers.length; i++) {
-      ScriptApp.deleteTrigger(triggers[i]);
-      Logger.log('✅ Trigger eliminado: ' + triggers[i].getHandlerFunction());
-    }
-
-    toast('Triggers eliminados ✅', 2);
-    Logger.log('✅ Todos los triggers eliminados');
-
-    // PASO 2: Listar todas las hojas del sistema
-    var hojasDelSistema = [
-      CONFIG.SHEET_NAME_CONFIG,
-      CONFIG.SHEET_NAME_HISTORIAL,
-      CONFIG.SHEET_NAME_PLANTILLA,
-      CONFIG.SHEET_NAME_DIRECTORES,
-      CONFIG.SHEET_NAME_DATOS,
-      CONFIG.SHEET_NAME_RESUMEN
-    ];
-
-    Logger.log('Hojas del sistema a eliminar: ' + hojasDelSistema.join(', '));
-
-    // PASO 3: Verificar si quedará al menos una hoja después de borrar
-    var todasLasHojas = ss.getSheets();
-    var hojasQueSeMantienen = [];
-
-    for (var i = 0; i < todasLasHojas.length; i++) {
-      var nombreHoja = todasLasHojas[i].getName();
-      if (hojasDelSistema.indexOf(nombreHoja) === -1) {
-        hojasQueSeMantienen.push(todasLasHojas[i]);
-      }
-    }
-
-    Logger.log('Hojas que NO son del sistema: ' + hojasQueSeMantienen.length);
-
-    // PASO 4: Si todas las hojas son del sistema, crear una temporal
-    var hojaTemporal = null;
-    if (hojasQueSeMantienen.length === 0) {
-      Logger.log('⚠️ Todas las hojas son del sistema. Creando hoja temporal...');
-      toast('Creando hoja temporal...', 2);
-      hojaTemporal = ss.insertSheet('_TEMP_');
-      ss.setActiveSheet(hojaTemporal);
-      Logger.log('✅ Hoja temporal creada: _TEMP_');
-    } else {
-      // Activar una hoja que NO sea del sistema
-      ss.setActiveSheet(hojasQueSeMantienen[0]);
-      Logger.log('✅ Hoja activa: ' + hojasQueSeMantienen[0].getName());
-    }
-
-    SpreadsheetApp.flush();
-
-    // PASO 5: Eliminar todas las hojas del sistema
-    toast('Eliminando hojas del sistema...', 3);
-    var hojasEliminadas = 0;
-
-    for (var i = 0; i < hojasDelSistema.length; i++) {
-      var nombreHoja = hojasDelSistema[i];
-      var hoja = ss.getSheetByName(nombreHoja);
-
-      if (hoja) {
-        try {
-          ss.deleteSheet(hoja);
-          Logger.log('✅ Hoja eliminada: ' + nombreHoja);
-          hojasEliminadas++;
-        } catch (e) {
-          Logger.log('❌ Error al eliminar hoja "' + nombreHoja + '": ' + e.message);
-        }
-      } else {
-        Logger.log('⚠️ Hoja no existe: ' + nombreHoja);
-      }
-    }
-
-    SpreadsheetApp.flush();
-
-    Logger.log('✅ Total de hojas eliminadas: ' + hojasEliminadas + '/' + hojasDelSistema.length);
-
-    // PASO 6: Renombrar hoja temporal si existe
-    if (hojaTemporal) {
-      hojaTemporal.setName('Inicio');
-      hojaTemporal.getRange('A1').setValue('✅ Sistema desinstalado correctamente');
-      hojaTemporal.getRange('A1').setFontSize(14).setFontWeight('bold').setFontColor('#0f9d58');
-      hojaTemporal.getRange('A3').setValue('Para reinstalar:');
-      hojaTemporal.getRange('A4').setValue('1. Ve a Extensiones → Apps Script');
-      hojaTemporal.getRange('A5').setValue('2. Ejecuta la función: instalarTodoDesdeAmbienteLimpio()');
-      Logger.log('✅ Hoja temporal renombrada a "Inicio"');
-    }
-
-    // PASO 7: Limpiar propiedades del script
-    try {
-      var props = PropertiesService.getScriptProperties();
-      props.deleteAllProperties();
-      Logger.log('✅ Propiedades del script eliminadas');
-    } catch (e) {
-      Logger.log('⚠️ No se pudieron eliminar propiedades: ' + e.message);
-    }
-
-    Logger.log('═══════════════════════════════════════════════════════');
-    Logger.log('✅ DESINSTALACIÓN COMPLETADA');
-    Logger.log('═══════════════════════════════════════════════════════');
-
-    // Mensaje final
-    ui.alert(
-      '✅ Desinstalación Completada',
-      '🔥 El sistema ha sido ELIMINADO por completo:\n\n' +
-      '  ✅ ' + hojasEliminadas + ' hojas eliminadas\n' +
-      '  ✅ ' + triggers.length + ' triggers eliminados\n' +
-      '  ✅ Propiedades borradas\n\n' +
-      '📋 Para REINSTALAR el sistema:\n' +
-      '  1. Extensiones → Apps Script\n' +
-      '  2. Ejecuta: instalarTodoDesdeAmbienteLimpio()\n\n' +
-      '✅ El sistema quedó completamente limpio.',
-      ui.ButtonSet.OK
-    );
-
-  } catch (error) {
-    Logger.log('❌ ERROR EN DESINSTALACIÓN: ' + error.message);
-    Logger.log('Stack: ' + error.stack);
-
-    ui.alert(
-      '❌ Error',
-      'Hubo un error durante la desinstalación:\n\n' +
-      error.message + '\n\n' +
-      'Revisa el log en Apps Script para más detalles.',
-      ui.ButtonSet.OK
-    );
-  }
-}
-
-
-/**
- * ✅ INSTALAR TODO EL SISTEMA DESDE CERO
- * Crea TODAS las hojas, configuración y triggers automáticamente
- */
-function instalarTodoDesdeAmbienteLimpio() {
-  var ui = SpreadsheetApp.getUi();
-
-  var confirmacion = ui.alert(
-    '✅ INSTALAR SISTEMA COMPLETO',
-    '🚀 Esto creará TODO el sistema desde CERO:\n\n' +
-    '  ✅ Configuración (con token de Kobo)\n' +
-    '  ✅ Plantilla de Empleados\n' +
-    '  ✅ Directores\n' +
-    '  ✅ Hojas de Datos, Resumen e Historial\n' +
-    '  ✅ Trigger automático (sincronización cada 1 min)\n' +
-    '  ✅ Menú "Días Personales"\n\n' +
-    '¿Deseas continuar?',
-    ui.ButtonSet.YES_NO
-  );
-
-  if (confirmacion !== ui.Button.YES) {
-    ui.alert('✅ Cancelado', 'No se instaló nada.', ui.ButtonSet.OK);
-    return;
-  }
-
-  try {
-    Logger.log('═══════════════════════════════════════════════════════');
-    Logger.log('🚀 INICIANDO INSTALACIÓN COMPLETA');
-    Logger.log('═══════════════════════════════════════════════════════');
-
-    // OPTIMIZACIÓN CRÍTICA: Obtener spreadsheet con retry (esto puede causar timeout en documentos grandes)
-    Logger.log('🔄 Abriendo documento (esto puede tardar si el documento es muy grande)...');
-    var ss = obtenerSpreadsheetConRetry();
-    Logger.log('✅ Documento abierto correctamente');
-
-    // PASO 1: Eliminar triggers antiguos si existen
-    toast('Paso 1/7 — Limpiando triggers antiguos...', 2);
-    var triggers = ScriptApp.getProjectTriggers();
-    for (var i = 0; i < triggers.length; i++) {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-    Logger.log('✅ Triggers antiguos eliminados: ' + triggers.length);
-
-    // PASO 2: Eliminar hojas del sistema si existen (para reinstalar limpio)
-    toast('Paso 2/7 — Limpiando hojas antiguas...', 2);
-    var hojasDelSistema = [
-      CONFIG.SHEET_NAME_CONFIG,
-      CONFIG.SHEET_NAME_HISTORIAL,
-      CONFIG.SHEET_NAME_PLANTILLA,
-      CONFIG.SHEET_NAME_DIRECTORES,
-      CONFIG.SHEET_NAME_DATOS,
-      CONFIG.SHEET_NAME_RESUMEN
-    ];
-
-    var todasLasHojas = ss.getSheets();
-    var hojasExternas = [];
-
-    for (var i = 0; i < todasLasHojas.length; i++) {
-      var nombreHoja = todasLasHojas[i].getName();
-      if (hojasDelSistema.indexOf(nombreHoja) === -1 && nombreHoja !== '_TEMP_' && nombreHoja !== 'Inicio') {
-        hojasExternas.push(todasLasHojas[i]);
-      }
-    }
-
-    // Si no hay hojas externas, crear una temporal
-    if (hojasExternas.length === 0 && todasLasHojas.length <= hojasDelSistema.length + 2) {
-      var hojaTemporal = ss.getSheetByName('_TEMP_') || ss.getSheetByName('Inicio') || ss.insertSheet('_TEMP_');
-      ss.setActiveSheet(hojaTemporal);
-    } else if (hojasExternas.length > 0) {
-      ss.setActiveSheet(hojasExternas[0]);
-    }
-
-    SpreadsheetApp.flush();
-
-    // Borrar hojas del sistema
-    for (var i = 0; i < hojasDelSistema.length; i++) {
-      var hoja = ss.getSheetByName(hojasDelSistema[i]);
-      if (hoja) {
-        ss.deleteSheet(hoja);
-        Logger.log('✅ Hoja antigua eliminada: ' + hojasDelSistema[i]);
-      }
-    }
-
-    // Borrar hoja temporal si existe
-    var hojaTemp = ss.getSheetByName('_TEMP_');
-    if (hojaTemp && ss.getSheets().length > 1) {
-      ss.deleteSheet(hojaTemp);
-      Logger.log('✅ Hoja _TEMP_ eliminada');
-    }
-
-    var hojaInicio = ss.getSheetByName('Inicio');
-    if (hojaInicio && ss.getSheets().length > 1) {
-      ss.deleteSheet(hojaInicio);
-      Logger.log('✅ Hoja Inicio eliminada');
-    }
-
-    // PASO 3: Crear hoja de Configuración
-    toast('Paso 3/7 — Creando Configuración...', 1);
-    Utilities.sleep(500); // Evitar timeout
-    crearHojaConfiguracion();
-    Logger.log('✅ Hoja de Configuración creada');
-
-    // Asegurar que el token esté configurado
-    var sheetConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
-    if (sheetConfig) {
-      sheetConfig.getRange('B3').setValue(CONFIG.KOBO_TOKEN_DEFAULT);
-      Logger.log('✅ Token de KoboToolbox configurado');
-    }
-
-    // PASO 4: Crear hoja de Directores
-    toast('Paso 4/7 — Creando Directores...', 1);
-    Utilities.sleep(500); // Evitar timeout
-    crearHojaDirectores();
-    Logger.log('✅ Hoja de Directores creada');
-
-    // PASO 5: Crear hoja de Plantilla de Empleados
-    toast('Paso 5/7 — Creando Plantilla de Empleados...', 1);
-    Utilities.sleep(500); // Evitar timeout
-    crearHojaPlantillaEmpleados();
-    Logger.log('✅ Hoja de Plantilla de Empleados creada');
-
-    // PASO 6: Crear hojas vacías para Datos, Resumen e Historial
-    toast('Paso 6/7 — Creando hojas de datos...', 1);
-    [CONFIG.SHEET_NAME_DATOS, CONFIG.SHEET_NAME_RESUMEN, CONFIG.SHEET_NAME_HISTORIAL].forEach(function(nombre) {
-      if (!ss.getSheetByName(nombre)) {
-        ss.insertSheet(nombre);
-        Logger.log('✅ Hoja creada: ' + nombre);
-      }
-    });
-
-    // UN SOLO FLUSH al final de todas las operaciones (más rápido)
-    SpreadsheetApp.flush();
-
-    // PASO 7: Crear trigger automático
-    toast('Paso 7/7 — Configurando sincronización automática...', 2);
-    ScriptApp.newTrigger('ejecutarAutomatico')
-      .timeBased()
-      .everyMinutes(1)
-      .create();
-    Logger.log('✅ Trigger automático creado (cada 1 minuto)');
-
-    // PASO 8: Activar hoja de Configuración
-    var hojaConfig = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
-    if (hojaConfig) {
-      ss.setActiveSheet(hojaConfig);
-      Logger.log('✅ Hoja de Configuración activada');
-    }
-
-    Logger.log('═══════════════════════════════════════════════════════');
-    Logger.log('✅ INSTALACIÓN COMPLETADA');
-    Logger.log('═══════════════════════════════════════════════════════');
-
-    toast('✅ Instalación completada', 2);
-
-    // Mensaje final
-    ui.alert(
-      '✅ Instalación Completada',
-      '🚀 El sistema ha sido INSTALADO correctamente:\n\n' +
-      '  ✅ Configuración creada con token de Kobo\n' +
-      '  ✅ Plantilla de Empleados con ' + Object.keys(CONFIG.CORREOS_EMPLEADOS).length + ' empleados\n' +
-      '  ✅ Directores configurados\n' +
-      '  ✅ Trigger automático activado\n' +
-      '  ✅ Menú "Días Personales" disponible\n\n' +
-      '📋 PRÓXIMOS PASOS:\n' +
-      '  1. Verifica el token en la hoja Configuración\n' +
-      '  2. Ejecuta: Días Personales → 🔄 Buscar Nuevos Registros\n' +
-      '  3. Revisa que los datos se importen correctamente\n\n' +
-      '✅ ¡Listo para usar!',
-      ui.ButtonSet.OK
-    );
-
-  } catch (error) {
-    Logger.log('❌ ERROR EN INSTALACIÓN: ' + error.message);
-    Logger.log('Stack: ' + error.stack);
-
-    ui.alert(
-      '❌ Error',
-      'Hubo un error durante la instalación:\n\n' +
-      error.message + '\n\n' +
-      'Revisa el log en Apps Script para más detalles.',
-      ui.ButtonSet.OK
-    );
-  }
-}
-
 
 /**
  * Función auxiliar para mostrar mensajes toast
@@ -3881,66 +3466,25 @@ function diagnosticarEstructuraKobo() {
   }
 }
 
-// ============================================================================
-// FUNCIÓN DE REPARACIÓN: Corregir URL de KoboToolbox
-// ============================================================================
-
 /**
- * Corrige la URL de KoboToolbox en la hoja de Configuración
- * Útil cuando la URL está incorrecta y causa errores de "Bandwidth quota exceeded"
+ * EJECUTAR UNA VEZ: Crea el trigger automático del sistema.
+ * Después de ejecutar esta función, el sistema correrá solo cada 10 minutos.
  */
-function corregirURLKoboToolbox() {
-  const ui = SpreadsheetApp.getUi();
-
-  try {
-    Logger.log('🔧 Iniciando corrección de URL de KoboToolbox...');
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
-
-    // Si no existe la hoja de Configuración, crearla
-    if (!sheet) {
-      Logger.log('⚠️ Hoja de configuración no encontrada. Creándola...');
-      crearHojaConfiguracion();
-      sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+function CREAR_TRIGGER() {
+  // Primero eliminar cualquier trigger existente para no duplicar
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'ejecutarAutomatico') {
+      ScriptApp.deleteTrigger(triggers[i]);
     }
-
-    // Leer URL actual
-    const urlActual = sheet.getRange('B4').getValue();
-    const urlCorrecta = CONFIG.KOBO_API_URL;
-
-    Logger.log('📋 URL ACTUAL: ' + urlActual);
-    Logger.log('✅ URL CORRECTA: ' + urlCorrecta);
-
-    // Actualizar la URL en la celda B4
-    sheet.getRange('B4').setValue(urlCorrecta);
-
-    // Resaltar temporalmente la celda actualizada
-    sheet.getRange('B4').setBackground('#d4edda'); // Verde claro
-
-    Logger.log('✅ URL corregida exitosamente');
-
-    ui.alert(
-      '✅ URL Corregida',
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-      'URL ANTERIOR:\n' + urlActual + '\n\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-      'URL CORRECTA (actualizada):\n' + urlCorrecta + '\n\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-      '✅ La URL ha sido corregida en la hoja "Configuración".\n\n' +
-      '🔹 Ahora puedes ejecutar "Buscar Nuevos Registros" sin errores.\n\n' +
-      '🔹 Los correos de error deberían detenerse.',
-      ui.ButtonSet.OK
-    );
-
-  } catch (error) {
-    Logger.log('❌ ERROR AL CORREGIR URL: ' + error.message);
-    Logger.log('Stack: ' + error.stack);
-
-    ui.alert(
-      '❌ Error',
-      'No se pudo corregir la URL:\n\n' + error.message,
-      ui.ButtonSet.OK
-    );
   }
+  // Crear trigger nuevo cada 10 minutos
+  ScriptApp.newTrigger('ejecutarAutomatico')
+    .timeBased()
+    .everyMinutes(10)
+    .create();
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    'Trigger creado: ejecutarAutomatico cada 10 minutos',
+    'LISTO', 10
+  );
 }
