@@ -220,8 +220,11 @@ function ejecutarSistema() {
       return;
     }
 
-    // 5. Agregar al historial solo los registros nuevos
-    agregarAlHistorial(registrosNuevos, datosKobo[0]);
+    // 5. Agregar al historial solo los registros nuevos.
+    //    En la primera ejecución se marcan directamente como "Correo Enviado"
+    //    (ya existían antes de instalar el sistema → nunca enviar correo por ellos).
+    const estadoNuevos = primerEjecucion ? 'Correo Enviado' : 'Procesado';
+    agregarAlHistorial(registrosNuevos, datosKobo[0], estadoNuevos);
 
     // 6. Enviar correos solo para registros verdaderamente nuevos (no en la primera ejecución)
     if (!primerEjecucion) {
@@ -357,6 +360,69 @@ function LIMPIAR_HISTORIAL_DUPLICADOS() {
 
   Logger.log('Historial limpiado: ' + eliminados + ' duplicados eliminados. Quedan ' + filasMantener.length + ' registros.');
   ss.toast('Listo: ' + eliminados + ' duplicados eliminados. Historial tiene ' + filasMantener.length + ' registros únicos.', 'LIMPIEZA COMPLETADA', 10);
+}
+
+/**
+ * RE-SINCRONIZAR SIN CORREOS:
+ * Descarga todos los registros de KoboToolbox y agrega al historial los que falten,
+ * marcándolos como "Correo Enviado" SIN enviar ningún correo.
+ * Útil cuando el historial fue borrado parcialmente o la caché se perdió.
+ * SEGURO: nunca envía correos ni modifica registros que ya existen.
+ */
+function RESINCRONIZAR_SIN_CORREOS() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.toast('Descargando datos de KoboToolbox...', 'Re-sincronizando', 5);
+
+  var datosKobo;
+  try {
+    datosKobo = obtenerDatosKoboToolbox();
+  } catch (e) {
+    ss.toast('Error al conectar con KoboToolbox: ' + e.message, 'Error', 10);
+    return;
+  }
+
+  if (!datosKobo || datosKobo.length <= 1) {
+    ss.toast('KoboToolbox no devolvió datos.', 'Info', 5);
+    return;
+  }
+
+  var headers  = datosKobo[0];
+  var registros = datosKobo.slice(1);
+  var idIndex  = encontrarColumnaId(headers);
+
+  // Leer todos los IDs que ya están en el historial
+  var idsExistentes = new Set();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
+  if (sheet && sheet.getLastRow() > 1) {
+    var idsHoja = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+    idsHoja.forEach(function(fila) { idsExistentes.add(fila[0].toString()); });
+  }
+
+  // Encontrar registros de KoboToolbox que NO están en el historial
+  var faltantes = registros.filter(function(row) {
+    var id = (idIndex >= 0 && row[idIndex] !== undefined && row[idIndex] !== '')
+      ? row[idIndex].toString()
+      : row.join('|||');
+    return !idsExistentes.has(id);
+  });
+
+  if (faltantes.length === 0) {
+    ss.toast('El historial ya está completo. No hay registros faltantes.', 'Re-sincronización OK', 8);
+    Logger.log('RESINCRONIZAR_SIN_CORREOS: sin registros faltantes.');
+    return;
+  }
+
+  Logger.log('RESINCRONIZAR_SIN_CORREOS: ' + faltantes.length + ' registros faltantes detectados. Agregando como "Correo Enviado"...');
+
+  // Agregar los faltantes como "Correo Enviado" — sin enviar correo
+  agregarAlHistorial(faltantes, headers, 'Correo Enviado');
+
+  ss.toast(
+    faltantes.length + ' registro(s) recuperado(s) y marcado(s) como "Correo Enviado".\n' +
+    'No se envió ningún correo.',
+    'RE-SINCRONIZACIÓN COMPLETADA', 12
+  );
+  Logger.log('RESINCRONIZAR_SIN_CORREOS completado: ' + faltantes.length + ' registros recuperados.');
 }
 
 /**
@@ -551,7 +617,7 @@ function detectarRegistrosNuevos(datosKobo) {
     }
 
     const headers = datosKobo[0];
-    const idIndex = encontrarColumna(headers, ['_id', '_uuid', 'uuid', 'submission_id', 'id']);
+    const idIndex = encontrarColumnaId(headers);
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheetHistorial = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
@@ -660,7 +726,7 @@ function calcularDiasEntreFechas(fechaIniStr, fechaFinStr) {
  * @param {Array} registrosNuevos - Filas de datos nuevos
  * @param {Array} headers - Encabezados del CSV para identificar columnas
  */
-function agregarAlHistorial(registrosNuevos, headers) {
+function agregarAlHistorial(registrosNuevos, headers, estadoInicial) {
   try {
     if (!registrosNuevos || registrosNuevos.length === 0) return;
 
@@ -684,7 +750,8 @@ function agregarAlHistorial(registrosNuevos, headers) {
     }
 
     // Identificar columnas relevantes del formulario
-    const idIndex = encontrarColumna(headers, ['_id', '_uuid', 'uuid', 'submission_id', 'id']);
+    const estadoFila = estadoInicial || 'Procesado';
+    const idIndex = encontrarColumnaId(headers);
     const colEquipo = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento', 'programa/', 'departamento/']);
     const colFechaInicio = encontrarColumna(headers, [
       'fecha_inicio', 'fecha_de_inicio', 'fecha de inicio',  // ← Con espacios
@@ -756,7 +823,7 @@ function agregarAlHistorial(registrosNuevos, headers) {
         fechaIni,
         fechaFi,
         diasSolicitados,
-        'Procesado'
+        estadoFila
       ];
     });
 
@@ -782,8 +849,14 @@ function agregarAlHistorial(registrosNuevos, headers) {
       'escribir registros en historial',
       5
     );
+
+    // Si el estado es "Correo Enviado" (re-sync o primera ejecución), colorear verde de inmediato
+    if (estadoFila === 'Correo Enviado') {
+      sheet.getRange(ultimaFila, 1, datosHistorial.length, 8).setBackground('#b7e1cd');
+    }
+
     Utilities.sleep(800); // AUMENTADO: Más tiempo después de escritura masiva
-    Logger.log(datosHistorial.length + ' registros agregados al historial');
+    Logger.log(datosHistorial.length + ' registros agregados al historial (estado: ' + estadoFila + ')');
 
     // OPTIMIZACIÓN: Actualizar caché de IDs procesados sin tener que releer todo el historial
     try {
@@ -1286,6 +1359,41 @@ function encontrarColumna(headers, palabrasClave) {
     }
   }
   Logger.log('Columna no encontrada para: ' + palabrasClave.join(', ') + '. Retornando -1 (no disponible).');
+  return -1;
+}
+
+/**
+ * Busca la columna de ID único de KoboToolbox con coincidencia EXACTA primero.
+ * Evita falsos positivos por columnas que contienen "id" en su nombre
+ * (ej: "fecha_de_inicio", "apellido", "actividad_id_interna").
+ * Loguea todos los headers disponibles si no encuentra nada, para facilitar diagnóstico.
+ */
+function encontrarColumnaId(headers) {
+  const exactos = ['_id', '_uuid', 'uuid', '_submission_id', 'submission_id', '_index', 'id'];
+
+  // Paso 1: coincidencia exacta (más segura)
+  for (var j = 0; j < exactos.length; j++) {
+    for (var i = 0; i < headers.length; i++) {
+      if (headers[i].toString().toLowerCase().trim() === exactos[j]) {
+        Logger.log('✅ Columna ID encontrada (exacta): "' + headers[i] + '" en índice ' + i);
+        return i;
+      }
+    }
+  }
+
+  // Paso 2: coincidencia parcial solo para _id y _uuid (prefijo con guión bajo → son del sistema)
+  const sistemaPrefijos = ['_id', '_uuid'];
+  for (var j = 0; j < sistemaPrefijos.length; j++) {
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i].toString().toLowerCase().trim();
+      if (h.includes(sistemaPrefijos[j])) {
+        Logger.log('✅ Columna ID encontrada (parcial): "' + headers[i] + '" en índice ' + i);
+        return i;
+      }
+    }
+  }
+
+  Logger.log('⚠️ Columna ID de KoboToolbox no encontrada. Headers disponibles: [' + headers.join(' | ') + ']');
   return -1;
 }
 
