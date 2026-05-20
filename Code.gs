@@ -1863,6 +1863,26 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       return;
     }
 
+    // ── MODO PRUEBA ──────────────────────────────────────────────────────────
+    // Cuando está activo, TODOS los correos llegan solo al correo de prueba.
+    // Nadie más recibe nada. El asunto lleva "[PRUEBA]" y el cuerpo muestra
+    // a quién habría llegado el correo en producción.
+    var modoPrueba = leerConfigPorEtiqueta(sheet, 'Modo Prueba (TRUE/FALSE):', false);
+    modoPrueba = modoPrueba && modoPrueba.toString().toLowerCase() === 'true';
+    var correoPrueba = '';
+    if (modoPrueba) {
+      correoPrueba = (leerConfigPorEtiqueta(sheet, 'Correo de prueba:', '') || '').toString().trim();
+      if (!correoPrueba) {
+        Logger.log('⚠️ Modo Prueba activo pero "Correo de prueba" está vacío. Canceling envío.');
+        SpreadsheetApp.getActiveSpreadsheet().toast(
+          'Modo Prueba activo pero no hay correo de prueba configurado. Ingresa tu correo en la hoja Configuración.',
+          '⚠️ Modo Prueba', 10
+        );
+        return;
+      }
+      Logger.log('🧪 MODO PRUEBA ACTIVO — todos los correos irán solo a: ' + correoPrueba);
+    }
+
     // Construir mapa de saldos para búsqueda rápida (con clave normalizada para mayor tolerancia)
     const saldoMap = {};
     const saldoMapNorm = {};
@@ -1993,20 +2013,27 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
           var asuntoDir = '[Días Personales] ' + nombreEmpleado + ' tomó ' + diasEstaSolicitud + ' día(s) — ' + equipoEmpleado;
           var cuerpoDir = construirCorreoDirector(nombreEmpleado, equipoEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo, companeros);
 
-          // Si el empleado ES un DIRECTOR → enviar copia a su supervisor
-          var destinatarios = correoDir.trim();
+          // Calcular destinatarios reales (producción)
+          var destinatariosReales = correoDir.trim();
           if (esDirector && correoSupervisor) {
-            // Evitar duplicados: si el director ya es el supervisor, no agregar copia
             if (correoDir.trim().toLowerCase() !== correoSupervisor.toLowerCase()) {
-              destinatarios = correoDir.trim() + ',' + correoSupervisor;
-              Logger.log('⭐ ' + nombreEmpleado + ' es DIRECTOR → agregando copia a supervisor: ' + correoSupervisor);
+              destinatariosReales = correoDir.trim() + ',' + correoSupervisor;
+              Logger.log('⭐ ' + nombreEmpleado + ' es DIRECTOR → copia a supervisor: ' + correoSupervisor);
             }
           } else {
             Logger.log('👤 ' + nombreEmpleado + ' es trabajador normal → correo SOLO al director');
           }
 
-          MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
-          Logger.log('✅ Correo DIRECTOR enviado a: ' + destinatarios + ' (para ' + nombreEmpleado + ' — ' + equipoEmpleado + ')' + (esDirector ? ' [con copia a supervisor]' : ''));
+          if (modoPrueba) {
+            // En modo prueba: todo llega solo al correo de prueba con banner informativo
+            asuntoDir = '[PRUEBA] ' + asuntoDir;
+            cuerpoDir = construirBannerPrueba('director', destinatariosReales) + cuerpoDir;
+            MailApp.sendEmail({ to: correoPrueba, subject: asuntoDir, htmlBody: cuerpoDir });
+            Logger.log('🧪 [PRUEBA] Correo director redirigido a ' + correoPrueba + ' (original: ' + destinatariosReales + ')');
+          } else {
+            MailApp.sendEmail({ to: destinatariosReales, subject: asuntoDir, htmlBody: cuerpoDir });
+            Logger.log('✅ Correo DIRECTOR enviado a: ' + destinatariosReales + ' (para ' + nombreEmpleado + ')' + (esDirector ? ' [+supervisor]' : ''));
+          }
         } catch (errDir) {
           Logger.log('Error enviando correo al director de ' + equipoEmpleado + ': ' + errDir.message);
         }
@@ -2021,8 +2048,15 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
             (saldo ? saldo.diasRestantes : '?') + ' día(s)';
           var cuerpoEmp = construirCorreoEmpleado(nombreEmpleado, fechaInicio, fechaFin, diasEstaSolicitud, saldo);
 
-          MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
-          Logger.log('Correo enviado al empleado: ' + correoEmp);
+          if (modoPrueba) {
+            asuntoEmp = '[PRUEBA] ' + asuntoEmp;
+            cuerpoEmp = construirBannerPrueba('empleado', correoEmp.trim()) + cuerpoEmp;
+            MailApp.sendEmail({ to: correoPrueba, subject: asuntoEmp, htmlBody: cuerpoEmp });
+            Logger.log('🧪 [PRUEBA] Correo empleado redirigido a ' + correoPrueba + ' (original: ' + correoEmp + ')');
+          } else {
+            MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
+            Logger.log('Correo enviado al empleado: ' + correoEmp);
+          }
         } catch (errEmp) {
           Logger.log('Error enviando correo al empleado ' + nombreEmpleado + ': ' + errEmp.message);
         }
@@ -2069,6 +2103,21 @@ function marcarCorreoEnviadoEnHistorial(nombresEmpleados) {
   } catch (e) {
     Logger.log('Error en marcarCorreoEnviadoEnHistorial: ' + e.message);
   }
+}
+
+/**
+ * Genera un banner HTML naranja que se antepone al correo cuando está activo el Modo Prueba.
+ * Muestra claramente a quién habría llegado el correo en producción.
+ * @param {string} tipo - 'director' o 'empleado'
+ * @param {string} destinatarioReal - correo(s) original(es) de producción
+ */
+function construirBannerPrueba(tipo, destinatarioReal) {
+  return '<div style="background:#e65100;color:#fff;padding:14px 20px;border-radius:8px;margin-bottom:16px;font-family:Arial,sans-serif;">' +
+    '<strong>🧪 CORREO DE PRUEBA — NO ES PRODUCCIÓN</strong><br>' +
+    '<span style="font-size:13px;">Este correo es una prueba. En producción habría llegado al ' +
+    (tipo === 'director' ? 'director/supervisor' : 'empleado') +
+    ':<br><strong>' + destinatarioReal + '</strong></span>' +
+    '</div>';
 }
 
 /**
@@ -2450,13 +2499,19 @@ function crearHojaConfiguracion() {
   sheet.getRange('A2:B2').merge();
   Utilities.sleep(200);
 
-  // Campos de configuración — SIEMPRE en filas 3-7
+  // Preservar valores de modo prueba si ya existen
+  const modoPruebaExistente = esNueva ? false : leerConfigPorEtiqueta(sheet, 'Modo Prueba (TRUE/FALSE):', false);
+  const correoPruebaExistente = esNueva ? '' : (leerConfigPorEtiqueta(sheet, 'Correo de prueba:', '') || '');
+
+  // Campos de configuración — SIEMPRE en filas 3-9
   const configData = [
     ['Token KoboToolbox: (*)',          tokenExistente],
     ['URL API KoboToolbox:',            urlExistente],
     ['Días personales totales:',        diasExistentes],
     ['Enviar correos (TRUE/FALSE):',    correosActivoExistente],
-    ['Correo del administrador: (*)',   correoExistente]
+    ['Correo del administrador: (*)',   correoExistente],
+    ['Modo Prueba (TRUE/FALSE):',       modoPruebaExistente],
+    ['Correo de prueba:',               correoPruebaExistente]
   ];
 
   ejecutarConRetry(
@@ -2469,9 +2524,10 @@ function crearHojaConfiguracion() {
   );
   Utilities.sleep(300);
 
-  // Resaltar filas obligatorias
+  // Resaltar filas obligatorias (amarillo) y modo prueba (naranja claro)
   sheet.getRange('A3:B3').setBackground('#fff3cd'); // Token - amarillo
-  sheet.getRange('A7:B7').setBackground('#fff3cd'); // Correo - amarillo
+  sheet.getRange('A7:B7').setBackground('#fff3cd'); // Correo admin - amarillo
+  sheet.getRange('A8:B9').setBackground('#ffe0cc'); // Modo Prueba - naranja claro
 
   // Instrucciones
   const instrucciones = [
@@ -2569,6 +2625,9 @@ function onOpen() {
       .addItem('📧 Reenviar Correo Individual', 'reenviarCorreoIndividual')
       .addItem('📬 Reenviar Correos a TODOS', 'reenviarTodosLosCorreos')
       .addItem('📊 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
+      .addSeparator()
+      .addItem('🧪 Activar Modo Prueba', 'activarModoPrueba')
+      .addItem('✅ Desactivar Modo Prueba', 'desactivarModoPrueba')
       .addSeparator()
       .addItem('⚙ Configuración', 'crearHojaConfiguracion')
       .addItem('👥 Directores', 'crearHojaDirectores')
@@ -2757,6 +2816,100 @@ function agregarNuevoEmpleado() {
   }
 }
 
+// ============================================================================
+// MODO PRUEBA — Activa/desactiva desde el menú con un clic
+// ============================================================================
+
+/**
+ * Activa el Modo Prueba y configura el correo de destino interactivamente.
+ * Mientras esté activo: TODOS los correos llegarán solo a ti, nadie más recibe nada.
+ */
+function activarModoPrueba() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+
+  if (!sheet) {
+    ui.alert('Primero debes crear la hoja de Configuración desde el menú.');
+    return;
+  }
+
+  var respuesta = ui.prompt(
+    '🧪 Activar Modo Prueba',
+    'Ingresa el correo donde quieres recibir TODOS los correos de prueba:\n\n' +
+    '(Mientras esté activo, nadie más recibirá ningún correo)',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (respuesta.getSelectedButton() !== ui.Button.OK) return;
+
+  var correo = respuesta.getResponseText().trim();
+  if (!correo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
+    ui.alert('❌ Correo inválido. Intenta de nuevo.');
+    return;
+  }
+
+  // Escribir directamente en las celdas del config
+  _setConfigValue(sheet, 'Modo Prueba (TRUE/FALSE):', 'TRUE');
+  _setConfigValue(sheet, 'Correo de prueba:', correo);
+
+  Logger.log('🧪 Modo Prueba ACTIVADO → correo de prueba: ' + correo);
+  ss.toast('🧪 MODO PRUEBA ACTIVADO — todos los correos irán solo a: ' + correo, 'Modo Prueba', 10);
+
+  ui.alert(
+    '🧪 Modo Prueba Activado',
+    'Todos los correos llegarán únicamente a:\n' + correo + '\n\n' +
+    'Nadie más recibirá notificaciones.\n\n' +
+    '• Los asuntos tendrán el prefijo [PRUEBA]\n' +
+    '• El cuerpo mostrará a quién habría llegado en producción\n\n' +
+    'Cuando termines las pruebas usa Menú > "Desactivar Modo Prueba".',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Desactiva el Modo Prueba. Los correos volverán a llegar a sus destinatarios reales.
+ */
+function desactivarModoPrueba() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+
+  if (!sheet) {
+    ui.alert('No se encontró la hoja de Configuración.');
+    return;
+  }
+
+  _setConfigValue(sheet, 'Modo Prueba (TRUE/FALSE):', 'FALSE');
+
+  Logger.log('✅ Modo Prueba DESACTIVADO — correos volverán a sus destinatarios reales');
+  ss.toast('✅ Modo Prueba DESACTIVADO — los correos vuelven a sus destinatarios reales.', 'Producción', 7);
+
+  ui.alert(
+    '✅ Modo Prueba Desactivado',
+    'Los correos ahora llegarán a los empleados y directores reales.\n\n' +
+    '¡El sistema está en producción!',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Helper: escribe un valor en la columna B de la fila que tenga la etiqueta dada en columna A.
+ */
+function _setConfigValue(sheet, etiqueta, valor) {
+  var datos = sheet.getRange(1, 1, sheet.getLastRow(), 2).getValues();
+  for (var i = 0; i < datos.length; i++) {
+    if (datos[i][0].toString().trim().toLowerCase() === etiqueta.toLowerCase()) {
+      sheet.getRange(i + 1, 2).setValue(valor);
+      return;
+    }
+  }
+  // Si no existe la etiqueta, agregar al final
+  var ultimaFila = sheet.getLastRow() + 1;
+  sheet.getRange(ultimaFila, 1).setValue(etiqueta);
+  sheet.getRange(ultimaFila, 2).setValue(valor);
+}
+
 /**
  * Actualiza únicamente la lista de empleados (nombre, equipo, correo)
  * sin tocar ninguna otra hoja ni configuración del sistema.
@@ -2877,12 +3030,15 @@ function reinstalar_paso2_configurar() {
     ['URL API KoboToolbox:',         CONFIG.KOBO_API_URL],
     ['Días personales totales:',     CONFIG.DIAS_TOTALES],
     ['Enviar correos (TRUE/FALSE):', 'TRUE'],
-    ['Correo del administrador: (*)', CONFIG.ADMIN_EMAIL_DEFAULT]
+    ['Correo del administrador: (*)', CONFIG.ADMIN_EMAIL_DEFAULT],
+    ['Modo Prueba (TRUE/FALSE):',    'FALSE'],
+    ['Correo de prueba:',            '']
   ];
   sheetConfig.getRange(3, 1, configData.length, 2).setValues(configData);
   sheetConfig.getRange(3, 1, configData.length, 1).setFontWeight('bold');
   sheetConfig.getRange('A3:B3').setBackground('#fff3cd');
   sheetConfig.getRange('A7:B7').setBackground('#fff3cd');
+  sheetConfig.getRange('A8:B9').setBackground('#ffe0cc'); // Modo Prueba - naranja claro
   sheetConfig.setColumnWidth(1, 300);
   sheetConfig.setColumnWidth(2, 500);
   Logger.log('Configuración creada con correos activados (TRUE)');
