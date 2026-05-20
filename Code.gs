@@ -184,6 +184,13 @@ function doGet(e) {
  * Función principal que ejecuta todo el proceso
  */
 function ejecutarSistema() {
+  // Prevenir ejecuciones concurrentes: el trigger cada 5 min y el webhook doPost
+  // pueden dispararse al mismo tiempo y enviar correos duplicados.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    Logger.log('ejecutarSistema: otra instancia en ejecución. Omitiendo esta llamada para evitar duplicados.');
+    return;
+  }
   try {
     Logger.log('Iniciando sistema de gestión de días personales...');
 
@@ -242,6 +249,8 @@ function ejecutarSistema() {
     if (!error.esErrorServidor) {
       enviarCorreoError(error);
     }
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -322,14 +331,6 @@ function LIMPIAR_HISTORIAL_DUPLICADOS() {
     });
   }
 
-  // Actualizar caché con los IDs limpios
-  try {
-    var idsLimpios = filasMantener.map(function(f) { return f[0].toString(); });
-    PropertiesService.getScriptProperties().setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimpios));
-  } catch(e) {
-    Logger.log('No se pudo actualizar caché: ' + e.message);
-  }
-
   Logger.log('Historial limpiado: ' + eliminados + ' duplicados eliminados. Quedan ' + filasMantener.length + ' registros.');
   ss.toast('Listo: ' + eliminados + ' duplicados eliminados. Historial tiene ' + filasMantener.length + ' registros únicos.', 'LIMPIEZA COMPLETADA', 10);
 }
@@ -339,21 +340,19 @@ function LIMPIAR_HISTORIAL_DUPLICADOS() {
  * y corrige la URL de KoboToolbox en la hoja de Configuracion.
  */
 function REPARAR_SISTEMA() {
-  // 1. Eliminar triggers duplicados — dejar exactamente 1
+  // 1. Eliminar TODOS los triggers existentes de ejecutarAutomatico y recrear UNO solo a 5 min.
+  // El trigger de 1 minuto (versión anterior) causaba ejecuciones concurrentes y correos duplicados.
   var triggers = ScriptApp.getProjectTriggers();
-  var encontrado = false;
   var eliminados = 0;
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === 'ejecutarAutomatico') {
-      if (encontrado) {
-        ScriptApp.deleteTrigger(triggers[i]);
-        eliminados++;
-      } else {
-        encontrado = true;
-      }
+      ScriptApp.deleteTrigger(triggers[i]);
+      eliminados++;
     }
   }
-  Logger.log('Triggers duplicados eliminados: ' + eliminados + '. Quedó 1 trigger activo.');
+  // Crear exactamente 1 trigger a 5 minutos
+  ScriptApp.newTrigger('ejecutarAutomatico').timeBased().everyMinutes(5).create();
+  Logger.log('Triggers eliminados: ' + eliminados + '. Nuevo trigger creado: cada 5 minutos.');
 
   // 2. Corregir la URL en la hoja de Configuracion
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -376,7 +375,7 @@ function REPARAR_SISTEMA() {
     }
   }
 
-  ss.toast('Sistema reparado: ' + eliminados + ' trigger(s) duplicado(s) eliminado(s) y URL corregida.', 'REPARADO', 10);
+  ss.toast('Sistema reparado: trigger recreado a 5 min, ' + eliminados + ' trigger(s) viejo(s) eliminado(s), URL corregida.', 'REPARADO', 10);
 }
 
 /**
@@ -537,29 +536,18 @@ function detectarRegistrosNuevos(datosKobo) {
       return datosKobo.slice(1);
     }
 
-    // Leer IDs desde la caché de PropertiesService (hasta 1000 IDs)
+    // Leer TODOS los IDs del historial (columna A completa).
+    // No usamos caché de PropertiesService porque tiene límite de 9 KB y se corrompe
+    // silenciosamente cuando supera ese límite, causando falsos "registros nuevos".
     var historialIds = new Set();
-    try {
-      const cache = PropertiesService.getScriptProperties();
-      const cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
-      if (cachedIds) {
-        JSON.parse(cachedIds).forEach(function(id) { historialIds.add(id.toString()); });
-        Logger.log('💾 Caché cargada: ' + historialIds.size + ' IDs');
-      }
-    } catch (e) {
-      Logger.log('⚠️ No se pudo leer caché: ' + e.message);
-    }
-
-    // Complementar con las últimas 200 filas del historial (por si la caché está incompleta)
     const ultimaFilaHistorial = sheetHistorial.getLastRow();
-    const numFilasLeer = Math.min(ultimaFilaHistorial - 1, 200);
-    const startRow = Math.max(2, ultimaFilaHistorial - numFilasLeer + 1);
+    const numFilasHistorial = ultimaFilaHistorial - 1;
 
-    Logger.log('📖 Leyendo últimas ' + numFilasLeer + ' filas del historial como respaldo');
+    Logger.log('📖 Leyendo historial completo: ' + numFilasHistorial + ' fila(s)');
 
     const historialData = ejecutarConRetry(
-      function() { return sheetHistorial.getRange(startRow, 1, numFilasLeer, 1).getValues(); },
-      'lectura de historial',
+      function() { return sheetHistorial.getRange(2, 1, numFilasHistorial, 1).getValues(); },
+      'lectura de historial completo',
       5
     );
 
@@ -709,22 +697,6 @@ function agregarAlHistorial(registrosNuevos, headers) {
     );
     Utilities.sleep(800); // AUMENTADO: Más tiempo después de escritura masiva
     Logger.log(datosHistorial.length + ' registros agregados al historial');
-
-    // OPTIMIZACIÓN: Actualizar caché de IDs procesados sin tener que releer todo el historial
-    try {
-      const cache = PropertiesService.getScriptProperties();
-      const cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
-      const nuevosIDs = datosHistorial.map(function(fila) { return fila[0]; });
-
-      const idsActuales = cachedIds ? JSON.parse(cachedIds) : [];
-      const idsActualizados = idsActuales.concat(nuevosIDs);
-      // Mantener solo los últimos 1000 IDs para no exceder límite de propiedades
-      const idsLimitados = idsActualizados.slice(-1000);
-      cache.setProperty('IDS_PROCESADOS_CACHE', JSON.stringify(idsLimitados));
-      Logger.log('💾 Caché actualizado con ' + nuevosIDs.length + ' nuevos IDs (total: ' + idsLimitados.length + ')');
-    } catch (e) {
-      Logger.log('⚠️ No se pudo actualizar caché: ' + e.message);
-    }
 
   } catch (error) {
     Logger.log('Error en agregarAlHistorial: ' + error.message);
@@ -1267,14 +1239,18 @@ function esEmpleadoUnDirector(nombreEmpleado, mapeoDirectores) {
 }
 
 /**
- * Limpia el caché de IDs procesados
- * Útil si el historial se ha modificado manualmente o para forzar recarga
+ * Limpia residuos del caché antiguo de PropertiesService.
+ * El sistema ya no usa caché — lee el historial completo en cada ejecución.
+ * Esta función solo elimina datos obsoletos que puedan quedar de versiones anteriores.
  */
 function limpiarCacheIDs() {
   try {
     PropertiesService.getScriptProperties().deleteProperty('IDS_PROCESADOS_CACHE');
-    Logger.log('🗑️ Caché de IDs limpiado correctamente');
-    SpreadsheetApp.getActiveSpreadsheet().toast('Caché de IDs limpiado. Próxima ejecución recargará desde historial.', 'Caché', 4);
+    Logger.log('🗑️ Residuos de caché antiguo eliminados');
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'Datos de caché antiguo eliminados. El sistema ahora lee el historial completo en cada ejecución.',
+      'Caché', 5
+    );
   } catch (e) {
     Logger.log('❌ Error limpiando caché: ' + e.message);
   }
@@ -1338,15 +1314,7 @@ function diagnosticarDocumento() {
     diagnostico.push('Total de filas: ' + totalFilas.toLocaleString());
     diagnostico.push('Total de columnas: ' + totalColumnas.toLocaleString());
 
-    // Verificar caché
-    var cache = PropertiesService.getScriptProperties();
-    var cachedIds = cache.getProperty('IDS_PROCESADOS_CACHE');
-    if (cachedIds) {
-      var ids = JSON.parse(cachedIds);
-      diagnostico.push('Caché activo: ' + ids.length + ' IDs');
-    } else {
-      diagnostico.push('Caché: NO ACTIVO');
-    }
+    diagnostico.push('Deduplicación: lee historial completo en cada ejecución (sin caché)');
 
     diagnostico.push('');
     diagnostico.push('═══════════════════════════════════════════════════════');
@@ -2957,20 +2925,21 @@ function reinstalar_paso2_configurar() {
 function reinstalar_paso3_activar() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // Configurar trigger automático cada 1 minuto
+  // Configurar trigger automático cada 5 minutos
+  // (1 minuto es demasiado agresivo y causa ejecuciones concurrentes)
   ScriptApp.newTrigger('ejecutarAutomatico')
     .timeBased()
-    .everyMinutes(1)
+    .everyMinutes(5)
     .create();
-  Logger.log('Trigger configurado (cada 1 minuto)');
+  Logger.log('Trigger configurado (cada 5 minutos)');
 
   // Ejecutar el sistema por primera vez
   ss.toast('Cargando datos de KoboToolbox...', 'Procesando', 30);
   ejecutarSistema();
 
-  ss.toast('Sistema reinstalado y funcionando. Para reenviar correos: reenviarTodosLosCorreos()', 'LISTO', 15);
+  ss.toast('Sistema reinstalado (trigger cada 5 min). Para reenviar correos: reenviarTodosLosCorreos()', 'LISTO', 15);
   Logger.log('=== PASO 3 COMPLETADO === Sistema reinstalado exitosamente');
-  Logger.log('Para reenviar correos a TODOS, ejecuta: reenviarTodosLosCorreos()');
+  Logger.log('Trigger activo cada 5 minutos. Para reenviar correos a TODOS, ejecuta: reenviarTodosLosCorreos()');
 }
 
 /**
@@ -2989,12 +2958,20 @@ function reenviarTodosLosCorreos() {
     return;
   }
 
-  var confirmacion = ui.alert(
-    'Reenviar correos a TODOS',
-    'Esto enviará correos de notificación a TODOS los empleados que tienen solicitudes.\n\n' +
+  // Doble confirmación para evitar envíos accidentales a toda la organización
+  var confirmacion1 = ui.alert(
+    '⚠️ ADVERTENCIA — Reenviar correos a TODOS',
+    'Esta acción enviará correos de notificación a TODOS los empleados que tienen solicitudes registradas.\n\n' +
     '• Cada empleado recibirá un correo con su saldo actual\n' +
     '• Cada director recibirá las notificaciones de su equipo\n\n' +
-    '¿Deseas continuar?',
+    '¿Estás seguro de que quieres continuar?',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirmacion1 !== ui.Button.YES) return;
+
+  var confirmacion = ui.alert(
+    '⚠️ Confirmación final',
+    'Esta es la confirmación FINAL.\n\nSe enviarán correos a todos los empleados. Esta acción NO se puede deshacer.\n\n¿Confirmas?',
     ui.ButtonSet.YES_NO
   );
 
