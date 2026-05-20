@@ -3293,6 +3293,19 @@ function reenviarCorreoIndividual() {
       }
     }
 
+    // Leer Modo Prueba (mismo mecanismo que en enviarNotificacionNuevoRegistro)
+    var modoPrueba = leerConfigPorEtiqueta(sheetConfig, 'Modo Prueba (TRUE/FALSE):', false);
+    modoPrueba = modoPrueba && modoPrueba.toString().toLowerCase() === 'true';
+    var correoPrueba = '';
+    if (modoPrueba) {
+      correoPrueba = (leerConfigPorEtiqueta(sheetConfig, 'Correo de prueba:', '') || '').toString().trim();
+      if (!correoPrueba) {
+        ui.alert('⚠️ Modo Prueba activo pero "Correo de prueba" está vacío.\nIngresa tu correo en la hoja Configuración.');
+        return;
+      }
+      Logger.log('🧪 MODO PRUEBA ACTIVO en reenvío individual → ' + correoPrueba);
+    }
+
     ss.toast('Buscando solicitudes de ' + nombreEmpleado + '...', 'Procesando', 5);
 
     // PASO 3: Obtener datos de Kobo y procesar
@@ -3413,8 +3426,15 @@ function reenviarCorreoIndividual() {
           }
         }
 
-        MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
-        Logger.log('✅ Correo enviado al director: ' + destinatarios);
+        if (modoPrueba) {
+          asuntoDir = '[PRUEBA] ' + asuntoDir;
+          cuerpoDir = construirBannerPrueba('director', destinatarios) + cuerpoDir;
+          MailApp.sendEmail({ to: correoPrueba, subject: asuntoDir, htmlBody: cuerpoDir });
+          Logger.log('🧪 [PRUEBA] Correo director → ' + correoPrueba + ' (original: ' + destinatarios + ')');
+        } else {
+          MailApp.sendEmail({ to: destinatarios, subject: asuntoDir, htmlBody: cuerpoDir });
+          Logger.log('✅ Correo enviado al director: ' + destinatarios);
+        }
         correosEnviados++;
       } catch (e) {
         Logger.log('❌ Error enviando correo al director: ' + e.message);
@@ -3427,8 +3447,15 @@ function reenviarCorreoIndividual() {
         (saldo ? saldo.diasRestantes : '?') + ' día(s)';
       var cuerpoEmp = construirCorreoEmpleado(nombreEmpleado, fechaInicio, fechaFin, diasTotales, saldo);
 
-      MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
-      Logger.log('✅ Correo enviado al empleado: ' + correoEmp);
+      if (modoPrueba) {
+        asuntoEmp = '[PRUEBA] ' + asuntoEmp;
+        cuerpoEmp = construirBannerPrueba('empleado', correoEmp.trim()) + cuerpoEmp;
+        MailApp.sendEmail({ to: correoPrueba, subject: asuntoEmp, htmlBody: cuerpoEmp });
+        Logger.log('🧪 [PRUEBA] Correo empleado → ' + correoPrueba + ' (original: ' + correoEmp + ')');
+      } else {
+        MailApp.sendEmail({ to: correoEmp.trim(), subject: asuntoEmp, htmlBody: cuerpoEmp });
+        Logger.log('✅ Correo enviado al empleado: ' + correoEmp);
+      }
       correosEnviados++;
     } catch (e) {
       Logger.log('❌ Error enviando correo al empleado: ' + e.message);
@@ -3438,15 +3465,18 @@ function reenviarCorreoIndividual() {
     Logger.log('✅ REENVÍO COMPLETADO - ' + correosEnviados + ' correo(s) enviado(s)');
     Logger.log('═══════════════════════════════════════════════════════');
 
+    var resumenEnvio = modoPrueba
+      ? '🧪 MODO PRUEBA — llegaron solo a: ' + correoPrueba
+      : '✅ Enviados a sus destinatarios reales';
+
     ui.alert(
       '✅ Correo Reenviado',
       '📧 Correo(s) enviado(s) exitosamente:\n\n' +
       '  → Empleado: ' + nombreEmpleado + '\n' +
-      '  → Correo: ' + correoEmp + '\n' +
       '  → Días: ' + diasTotales + '\n' +
       '  → Solicitudes: ' + solicitudesEmpleado.length + '\n\n' +
-      (correoDir ? '  → Director notificado: ' + correoDir : '') + '\n\n' +
-      '✅ Total de correos enviados: ' + correosEnviados,
+      resumenEnvio + '\n\n' +
+      '✅ Total: ' + correosEnviados + ' correo(s)',
       ui.ButtonSet.OK
     );
 
