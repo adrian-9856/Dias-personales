@@ -313,7 +313,7 @@ function MARCAR_TODOS_COMO_ENVIADOS() {
   );
 }
 
-
+/**
  * EJECUTAR UNA VEZ: Limpia el historial eliminando entradas duplicadas.
  * Mantiene solo un registro por persona+fecha, priorizando los que tienen nombre real
  * (descarta los "Sin nombre") y los que tienen ID numérico.
