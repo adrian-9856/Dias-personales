@@ -2682,35 +2682,62 @@ function crearHojaDirectores() {
 function onOpen() {
   try {
     var ui = SpreadsheetApp.getUi();
-    ui.createMenu('Días Personales')
-      .addItem('🆕 Buscar Nuevos Registros', 'buscarNuevosRegistros')
-      .addItem('🔃 Actualizar Todo', 'actualizarTodo')
+
+    // Leer modo actual para mostrarlo en el título del menú
+    var modoPrueba = false;
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheetCfg = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+      if (sheetCfg) {
+        var val = leerConfigPorEtiqueta(sheetCfg, 'Modo Prueba (TRUE/FALSE):', false);
+        modoPrueba = val && val.toString().toLowerCase() === 'true';
+      }
+    } catch(e2) {}
+
+    var tituloMenu = modoPrueba ? '🧪 Días Personales [PRUEBA]' : '✅ Días Personales [PRODUCCIÓN]';
+
+    // ── Submenú: Correos ──────────────────────────────────────────────────────
+    var menuCorreos = ui.createMenu('📧 Correos')
+      .addItem('📧 Reenviar correo a una persona', 'reenviarCorreoIndividual')
+      .addItem('📬 Reenviar correos a TODOS', 'reenviarTodosLosCorreos')
+      .addItem('📊 Enviar reporte a directores', 'enviarReporteManualaDirectores');
+
+    // ── Submenú: Modo ─────────────────────────────────────────────────────────
+    var menuModo = ui.createMenu(modoPrueba ? '🧪 Modo: PRUEBA (activo)' : '✅ Modo: PRODUCCIÓN (activo)')
+      .addItem('🧪 Cambiar a Modo PRUEBA', 'activarModoPrueba')
+      .addItem('✅ Cambiar a Modo PRODUCCIÓN', 'desactivarModoPrueba')
       .addSeparator()
-      .addItem('📧 Reenviar Correo Individual', 'reenviarCorreoIndividual')
-      .addItem('📬 Reenviar Correos a TODOS', 'reenviarTodosLosCorreos')
-      .addItem('📊 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
+      .addItem('📨 Activar envío de correos', 'activarEnvioCorreos');
+
+    // ── Submenú: Personal ─────────────────────────────────────────────────────
+    var menuPersonal = ui.createMenu('👥 Personal')
+      .addItem('➕ Agregar empleado nuevo', 'agregarNuevoEmpleado')
+      .addItem('🔄 Ver/actualizar lista de empleados', 'actualizarEmpleados')
+      .addItem('👥 Ver/actualizar directores', 'crearHojaDirectores');
+
+    // ── Submenú: Herramientas ─────────────────────────────────────────────────
+    var menuHerramientas = ui.createMenu('🔧 Herramientas')
+      .addItem('✔️ Marcar historial antiguo como enviado', 'MARCAR_TODOS_COMO_ENVIADOS')
+      .addItem('🔍 Ver columnas del formulario Kobo', 'diagnosticarEstructuraKobo')
+      .addItem('📊 Diagnóstico del sistema', 'diagnosticarDocumento')
       .addSeparator()
-      .addItem('📨 Activar Envío de Correos', 'activarEnvioCorreos')
-      .addItem('🧪 Activar Modo Prueba', 'activarModoPrueba')
-      .addItem('✅ Desactivar Modo Prueba', 'desactivarModoPrueba')
+      .addItem('🔧 Reinstalar sistema (Paso 1 — Limpiar)', 'reinstalar_paso1_limpiar')
+      .addItem('🔧 Reinstalar sistema (Paso 2 — Configurar)', 'reinstalar_paso2_configurar')
+      .addItem('🔧 Reinstalar sistema (Paso 3 — Activar)', 'reinstalar_paso3_activar')
+      .addItem('🛑 Desactivar triggers automáticos', 'desactivarTriggersAutomaticos');
+
+    // ── Menú principal ────────────────────────────────────────────────────────
+    ui.createMenu(tituloMenu)
+      .addItem('🔃 Actualizar todo ahora', 'actualizarTodo')
       .addSeparator()
-      .addItem('⚙ Configuración', 'crearHojaConfiguracion')
-      .addItem('👥 Directores', 'crearHojaDirectores')
-      .addItem('👤 Plantilla Empleados', 'crearHojaPlantillaEmpleados')
-      .addItem('➕ Agregar Empleado', 'agregarNuevoEmpleado')
-      .addItem('🔄 Actualizar Empleados', 'actualizarEmpleados')
+      .addSubMenu(menuCorreos)
+      .addSubMenu(menuModo)
+      .addSubMenu(menuPersonal)
+      .addSubMenu(menuHerramientas)
       .addSeparator()
-      .addItem('🔧 Reinstalar Paso 1 (Limpiar)', 'reinstalar_paso1_limpiar')
-      .addItem('🔧 Reinstalar Paso 2 (Configurar)', 'reinstalar_paso2_configurar')
-      .addItem('🔧 Reinstalar Paso 3 (Activar)', 'reinstalar_paso3_activar')
-      .addItem('🛑 Desactivar Triggers', 'desactivarTriggersAutomaticos')
-      .addSeparator()
-      .addItem('✔️ Marcar Todos como Enviados', 'MARCAR_TODOS_COMO_ENVIADOS')
-      .addItem('🗑️ Limpiar Caché', 'limpiarCacheIDs')
-      .addItem('📊 Diagnosticar Documento', 'diagnosticarDocumento')
-      .addItem('🔍 Ver Estructura Kobo', 'diagnosticarEstructuraKobo')
-      .addItem('ℹ Ayuda', 'mostrarAyuda')
+      .addItem('ℹ️ Ayuda', 'mostrarAyuda')
       .addToUi();
+
   } catch (e) {
     Logger.log('onOpen: sin contexto de UI (' + e.message + ')');
   }
