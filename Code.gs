@@ -262,6 +262,58 @@ function ejecutarAutomatico() {
 }
 
 /**
+ * EJECUTAR UNA VEZ: Marca TODAS las filas del historial como "Correo Enviado" (verde)
+ * sin enviar ningún correo. Útil cuando los correos ya fueron enviados manualmente
+ * o cuando se quiere evitar que el sistema reenvíe registros históricos.
+ *
+ * El sistema NO volverá a enviar esos registros porque los IDs ya están en el historial,
+ * independientemente del estado. Esta función es solo para que el estado visual sea correcto.
+ */
+function MARCAR_TODOS_COMO_ENVIADOS() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
+
+  if (!sheet || sheet.getLastRow() <= 1) {
+    ss.toast('Historial vacío, nada que marcar.', 'Info', 5);
+    return;
+  }
+
+  var ui = SpreadsheetApp.getUi();
+  var confirmacion = ui.alert(
+    'Marcar todos como "Correo Enviado"',
+    'Esto marcará en verde TODAS las filas del historial como "Correo Enviado".\n\n' +
+    'NO se enviará ningún correo. Solo cambia el estado visual.\n\n' +
+    '¿Continuar?',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirmacion !== ui.Button.YES) return;
+
+  var lastRow = sheet.getLastRow();
+  var numFilas = lastRow - 1;
+
+  // Leer la columna Estado (columna 8) completa
+  var estados = sheet.getRange(2, 8, numFilas, 1).getValues();
+  var marcadas = 0;
+
+  for (var i = 0; i < estados.length; i++) {
+    var estado = (estados[i][0] || '').toString().trim();
+    if (estado !== 'Correo Enviado') {
+      var fila = i + 2; // +2 porque empezamos en fila 2
+      sheet.getRange(fila, 8).setValue('Correo Enviado');
+      sheet.getRange(fila, 1, 1, 8).setBackground('#b7e1cd'); // verde
+      marcadas++;
+    }
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log('MARCAR_TODOS_COMO_ENVIADOS: ' + marcadas + ' filas marcadas como "Correo Enviado".');
+  ss.toast(
+    marcadas + ' filas marcadas como "Correo Enviado". No se envió ningún correo.',
+    '✅ Listo', 8
+  );
+}
+
+
  * EJECUTAR UNA VEZ: Limpia el historial eliminando entradas duplicadas.
  * Mantiene solo un registro por persona+fecha, priorizando los que tienen nombre real
  * (descarta los "Sin nombre") y los que tienen ID numérico.
@@ -2640,6 +2692,7 @@ function onOpen() {
       .addItem('🔧 Reinstalar Paso 3 (Activar)', 'reinstalar_paso3_activar')
       .addItem('🛑 Desactivar Triggers', 'desactivarTriggersAutomaticos')
       .addSeparator()
+      .addItem('✔️ Marcar Todos como Enviados', 'MARCAR_TODOS_COMO_ENVIADOS')
       .addItem('🗑️ Limpiar Caché', 'limpiarCacheIDs')
       .addItem('📊 Diagnosticar Documento', 'diagnosticarDocumento')
       .addItem('🔍 Ver Estructura Kobo', 'diagnosticarEstructuraKobo')
