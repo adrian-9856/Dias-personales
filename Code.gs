@@ -1981,6 +1981,13 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       'numero dias', 'dias a tomar', 'personal_solicitado'
     ]);
     const colEquipo        = encontrarColumna(headers, ['programa', 'departamento', 'equipo', 'team', 'programa_departamento', 'programa/', 'departamento/']);
+
+    // LOG DE DIAGNÓSTICO: imprime TODOS los encabezados del CSV para identificar nombres de columnas
+    Logger.log('📋 COLUMNAS DEL CSV DE KOBO:');
+    headers.forEach(function(h, i) { Logger.log('  [' + i + '] "' + h + '"'); });
+    Logger.log('🔎 Columna días → índice: ' + colDiasSolicitados + (colDiasSolicitados >= 0 ? ' ("' + headers[colDiasSolicitados] + '")' : ' ⚠️ NO ENCONTRADA'));
+    Logger.log('🔎 Columna equipo → índice: ' + colEquipo + (colEquipo >= 0 ? ' ("' + headers[colEquipo] + '")' : ' ⚠️ NO ENCONTRADA'));
+
     const mapeoDirectores  = obtenerMapeoDirectores();
 
     // Agrupar registros por empleado → un solo correo por persona aunque tenga varios registros nuevos
@@ -2004,11 +2011,12 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       Logger.log('🔍 DEBUG → Empleado: ' + nombreEmpleado + ' | Equipo detectado: "' + equipoEmpleado + '"');
 
       // Sumar días de TODOS los registros nuevos del empleado
-      // SOLO usar el número del campo "días solicitados" (NO calcular desde fechas)
       var diasEstaSolicitud = regs.reduce(function(sum, r) {
         var d = 0;
         if (colDiasSolicitados >= 0) {
-          d = parseInt((r[colDiasSolicitados] || '0').toString().trim(), 10) || 0;
+          var rawVal = r[colDiasSolicitados];
+          Logger.log('  → Valor raw en col días para ' + nombreEmpleado + ': "' + rawVal + '" (tipo: ' + typeof rawVal + ')');
+          d = parseInt((rawVal || '0').toString().trim(), 10) || 0;
         }
         if (d === 0) {
           // Fallback: calcular días entre fechas
@@ -2025,10 +2033,16 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
             } catch(e) { d = 1; }
           }
           if (d === 0) d = 1;
-          Logger.log('ADVERTENCIA: Días solicitados no numérico para ' + nombreEmpleado + ', usando cálculo: ' + d);
+          Logger.log('ADVERTENCIA: Días solicitados no numérico para ' + nombreEmpleado + ', usando cálculo de fechas: ' + d);
         }
         return sum + d;
       }, 0);
+      // Guarda final: si por cualquier razón resulta NaN o negativo, usar 1
+      if (!Number.isFinite(diasEstaSolicitud) || diasEstaSolicitud < 1) {
+        Logger.log('⚠️ diasEstaSolicitud inválido (' + diasEstaSolicitud + ') para ' + nombreEmpleado + ' → usando 1');
+        diasEstaSolicitud = 1;
+      }
+      Logger.log('📅 diasEstaSolicitud para ' + nombreEmpleado + ': ' + diasEstaSolicitud);
 
       var saldo        = saldoMap[nombreEmpleado] || saldoMapNorm[normalizarTexto(nombreEmpleado)] || null;
       var infoDirector = buscarDirectorPorEquipo(mapeoDirectores, equipoEmpleado) || { nombre: 'Sin asignar', correo: '' };
