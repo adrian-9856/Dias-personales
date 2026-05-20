@@ -2678,6 +2678,7 @@ function onOpen() {
       .addItem('📬 Reenviar Correos a TODOS', 'reenviarTodosLosCorreos')
       .addItem('📊 Enviar Reporte a Directores', 'enviarReporteManualaDirectores')
       .addSeparator()
+      .addItem('📨 Activar Envío de Correos', 'activarEnvioCorreos')
       .addItem('🧪 Activar Modo Prueba', 'activarModoPrueba')
       .addItem('✅ Desactivar Modo Prueba', 'desactivarModoPrueba')
       .addSeparator()
@@ -2872,6 +2873,19 @@ function agregarNuevoEmpleado() {
 // ============================================================================
 // MODO PRUEBA — Activa/desactiva desde el menú con un clic
 // ============================================================================
+
+/**
+ * Activa el envío de correos desde el menú (un solo clic).
+ * Equivale a escribir TRUE en la hoja Configuración manualmente.
+ */
+function activarEnvioCorreos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+  if (!sheet) { ss.toast('No existe hoja de Configuración.', 'Error', 5); return; }
+  _setConfigValue(sheet, 'Enviar correos (TRUE/FALSE):', 'TRUE');
+  ss.toast('✅ Envío de correos ACTIVADO.', 'Correos', 5);
+  Logger.log('Envío de correos activado desde menú.');
+}
 
 /**
  * Activa el Modo Prueba y configura el correo de destino interactivamente.
@@ -3285,7 +3299,7 @@ function reenviarCorreoIndividual() {
       );
 
       if (confirmar === ui.Button.YES) {
-        sheetConfig.getRange('B6').setValue('TRUE');
+        _setConfigValue(sheetConfig, 'Enviar correos (TRUE/FALSE):', 'TRUE');
         Logger.log('✅ Envío de correos activado');
       } else {
         ui.alert('Operación cancelada');
