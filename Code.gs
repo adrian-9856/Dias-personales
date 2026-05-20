@@ -1074,6 +1074,101 @@ function obtenerMapeoDirectores() {
 }
 
 /**
+ * Lee la hoja "Plantilla de Empleados" y devuelve un mapa {nombre → correo}.
+ * Esta es la fuente principal de verdad para correos de empleados.
+ * Para agregar o quitar personas: edita la hoja directamente, sin tocar Code.gs.
+ */
+function obtenerCorreosEmpleadosDesdeHoja() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+    if (!sheet || sheet.getLastRow() <= 3) return {};
+
+    var datos = sheet.getRange(4, 1, sheet.getLastRow() - 3, 3).getValues();
+    var mapa = {};
+    datos.forEach(function(fila) {
+      var nombre = fila[0] ? fila[0].toString().trim() : '';
+      var correo  = fila[2] ? fila[2].toString().trim() : '';
+      if (nombre && correo) {
+        mapa[nombre] = correo;
+        mapa[normalizarTexto(nombre)] = correo;
+      }
+    });
+    Logger.log('✅ Correos de empleados cargados desde hoja: ' + Object.keys(mapa).length / 2 + ' personas');
+    return mapa;
+  } catch(e) {
+    Logger.log('⚠️ Error leyendo Plantilla de Empleados: ' + e.message);
+    return {};
+  }
+}
+
+/**
+ * Interpreta un valor del campo "días solicitados" que puede venir como:
+ * número (1, 2), texto ("1 día", "2 días"), o incluso vacío.
+ * Devuelve un entero >= 0 (nunca NaN).
+ */
+function parsearDiasSolicitados(valor) {
+  if (valor === null || valor === undefined || valor === '') return 0;
+  var str = valor.toString().trim();
+  if (!str) return 0;
+
+  // Número directo
+  var n = parseInt(str, 10);
+  if (!isNaN(n) && n > 0) return n;
+
+  // Primer número dentro del texto ("2 días", "3 días hábiles", etc.)
+  var match = str.match(/\d+/);
+  if (match) {
+    n = parseInt(match[0], 10);
+    if (!isNaN(n) && n > 0) return n;
+  }
+
+  // Palabras en español
+  var palabras = { uno: 1, un: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5 };
+  var lower = normalizarTexto(str);
+  for (var p in palabras) {
+    if (lower.indexOf(p) === 0) return palabras[p];
+  }
+
+  return 0;
+}
+
+/**
+ * Envía UN correo resumen al administrador cuando hay problemas en el procesamiento.
+ * Solo se llama si hay errores reales — no sobrecarga el sistema con correos vacíos.
+ */
+function notificarErroresAdmin(errores) {
+  if (!errores || errores.length === 0) return;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetCfg = ss.getSheetByName(CONFIG.SHEET_NAME_CONFIG);
+    var adminEmail = sheetCfg
+      ? (leerConfigPorEtiqueta(sheetCfg, 'Correo administrador:', CONFIG.ADMIN_EMAIL_DEFAULT) || CONFIG.ADMIN_EMAIL_DEFAULT)
+      : CONFIG.ADMIN_EMAIL_DEFAULT;
+
+    var items = errores.map(function(e) { return '<li style="margin-bottom:6px;">' + e + '</li>'; }).join('');
+    var cuerpo =
+      '<div style="font-family:Arial,sans-serif;color:#333;">' +
+      '<div style="background:#c62828;color:#fff;padding:12px 20px;border-radius:8px 8px 0 0;">' +
+      '<strong>⚠️ Sistema de Días Personales — Problemas detectados</strong></div>' +
+      '<div style="border:1px solid #ddd;border-top:none;padding:20px;border-radius:0 0 8px 8px;">' +
+      '<p>Se procesaron solicitudes pero los siguientes registros necesitan atención manual:</p>' +
+      '<ul>' + items + '</ul>' +
+      '<p style="color:#888;font-size:12px;">Correo automático — ' + new Date().toLocaleString('es-GT') + '</p>' +
+      '</div></div>';
+
+    MailApp.sendEmail({
+      to: adminEmail,
+      subject: '⚠️ Días Personales: ' + errores.length + ' problema(s) al procesar solicitudes',
+      htmlBody: cuerpo
+    });
+    Logger.log('✉️ Alerta de errores enviada a: ' + adminEmail + ' (' + errores.length + ' problemas)');
+  } catch(e) {
+    Logger.log('Error enviando alerta admin: ' + e.message);
+  }
+}
+
+/**
  * Devuelve 1 (Ene–Jun) o 2 (Jul–Dic) según la fecha de inicio
  */
 function getSemestre(fechaStr) {
@@ -1128,10 +1223,8 @@ function crearHojaPlantillaEmpleados() {
     ['Diana Michelle Pérez Vaides',                'Apoyo emocional',           'diana@creamosguatemala.org'],
     ['Gerber Josué Álvarez',                       'Apoyo emocional',           'gerber@creamosguatemala.org'],
     ['Estela Karina Oscal Pixtun',                 'Apoyo emocional',           'karina@creamosguatemala.org'],
-    // Operaciones (4)
-    ['Alejandro Renato Valdéz Álvarez',            'Operaciones',               'renato@creamosguatemala.org'],
+    // Operaciones (2)
     ['Maritza Carolina Pérez López',               'Operaciones',               'maritza@creamosguatemala.org'],
-    ['Yhenifer Yaneth Aguilar Rodríguez de Pérez', 'Operaciones',               'yhenifer@creamosguatemala.org'],
     ['Juan Josué Alvarado Caxaj',                  'Operaciones',               'josue@creamosguatemala.org'],
     // mi-eelo (5)
     ['Stephany Tatiana Fuentes Rodríguez',         'mi-eelo',                   'stephany@creamosguatemala.org'],
@@ -1943,15 +2036,21 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       });
     }
 
-    // Busca el correo de un empleado tolerando diferencias de acentos/mayúsculas
+    // Mapa de correos desde la hoja "Plantilla de Empleados" (fuente principal)
+    // Para agregar/quitar personas: edita esa hoja directamente, sin tocar el código.
+    const correosPorHoja = obtenerCorreosEmpleadosDesdeHoja();
+
+    // Busca el correo de un empleado: primero la hoja, luego CONFIG como respaldo
     function buscarCorreoEmpleado(nombre) {
-      // 1. Saldo del procesamiento actual
-      var s = saldoMap[nombre] || saldoMapNorm[normalizarTexto(nombre)];
-      if (s && s.correoEmpleado) return s.correoEmpleado;
-      // 2. CONFIG directo
-      if (CONFIG.CORREOS_EMPLEADOS[nombre]) return CONFIG.CORREOS_EMPLEADOS[nombre];
-      // 3. CONFIG con nombre normalizado
       var nombNorm = normalizarTexto(nombre);
+      // 1. Hoja Plantilla de Empleados (fuente principal — editable sin código)
+      if (correosPorHoja[nombre]) return correosPorHoja[nombre];
+      if (correosPorHoja[nombNorm]) return correosPorHoja[nombNorm];
+      // 2. Saldo del procesamiento actual
+      var s = saldoMap[nombre] || saldoMapNorm[nombNorm];
+      if (s && s.correoEmpleado) return s.correoEmpleado;
+      // 3. CONFIG como respaldo (por si la hoja está vacía o desactualizada)
+      if (CONFIG.CORREOS_EMPLEADOS[nombre]) return CONFIG.CORREOS_EMPLEADOS[nombre];
       var encontrado = '';
       Object.keys(CONFIG.CORREOS_EMPLEADOS).forEach(function(k) {
         if (!encontrado && normalizarTexto(k) === nombNorm) encontrado = CONFIG.CORREOS_EMPLEADOS[k];
@@ -1996,6 +2095,9 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       gruposPorEmpleado[nombre].push(reg);
     });
 
+    // Acumula problemas para notificar al admin al final (un solo correo, no uno por error)
+    var erroresParaAdmin = [];
+
     Object.keys(gruposPorEmpleado).forEach(function(nombreEmpleado) {
       var regs = gruposPorEmpleado[nombreEmpleado];
       // Usar el último registro para equipo y fechas del correo
@@ -2008,38 +2110,25 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       // DEBUG: Mostrar equipo detectado (para diagnosticar problemas de correo)
       Logger.log('🔍 DEBUG → Empleado: ' + nombreEmpleado + ' | Equipo detectado: "' + equipoEmpleado + '"');
 
-      // Sumar días de TODOS los registros nuevos del empleado
+      // Sumar días de TODOS los registros nuevos del empleado usando parsearDiasSolicitados
       var diasEstaSolicitud = regs.reduce(function(sum, r) {
         var d = 0;
         if (colDiasSolicitados >= 0) {
           var rawVal = r[colDiasSolicitados];
           Logger.log('  → Valor raw en col días para ' + nombreEmpleado + ': "' + rawVal + '" (tipo: ' + typeof rawVal + ')');
-          d = parseInt((rawVal || '0').toString().trim(), 10) || 0;
+          d = parsearDiasSolicitados(rawVal);
         }
         if (d === 0) {
-          // Fallback: calcular días entre fechas
+          // Fallback: calcular días entre fechas si el campo no tiene valor
           var fi = colFechaInicio >= 0 ? r[colFechaInicio] : '';
           var ff = colFechaFin >= 0 ? r[colFechaFin] : '';
-          if (fi && ff) {
-            try {
-              var dInicio = new Date(fi);
-              var dFin = new Date(ff);
-              if (!isNaN(dInicio.getTime()) && !isNaN(dFin.getTime())) {
-                d = Math.round((dFin - dInicio) / (1000 * 60 * 60 * 24)) + 1;
-                if (d < 1) d = 1;
-              }
-            } catch(e) { d = 1; }
-          }
-          if (d === 0) d = 1;
-          Logger.log('ADVERTENCIA: Días solicitados no numérico para ' + nombreEmpleado + ', usando cálculo de fechas: ' + d);
+          d = calcularDiasEntreFechas(fi, ff);
+          if (d > 0) Logger.log('  → Días calculados desde fechas para ' + nombreEmpleado + ': ' + d);
         }
+        if (d === 0) d = 1; // mínimo 1 si todo falla
         return sum + d;
       }, 0);
-      // Guarda final: si por cualquier razón resulta NaN o negativo, usar 1
-      if (!Number.isFinite(diasEstaSolicitud) || diasEstaSolicitud < 1) {
-        Logger.log('⚠️ diasEstaSolicitud inválido (' + diasEstaSolicitud + ') para ' + nombreEmpleado + ' → usando 1');
-        diasEstaSolicitud = 1;
-      }
+      if (!Number.isFinite(diasEstaSolicitud) || diasEstaSolicitud < 1) diasEstaSolicitud = 1;
       Logger.log('📅 diasEstaSolicitud para ' + nombreEmpleado + ': ' + diasEstaSolicitud);
 
       var saldo        = saldoMap[nombreEmpleado] || saldoMapNorm[normalizarTexto(nombreEmpleado)] || null;
@@ -2047,12 +2136,17 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var correoDir    = infoDirector.correo;
       var correoEmp    = buscarCorreoEmpleado(nombreEmpleado);
 
-      // DEBUG: Verificar que se encontró el director correcto
       if (!correoDir || correoDir === '') {
-        Logger.log('⚠️ ADVERTENCIA: No se encontró director para equipo "' + equipoEmpleado + '"');
-        Logger.log('   Verifica que el equipo esté en la hoja Directores o en CONFIG.DIRECTORES_DEFAULT');
+        Logger.log('⚠️ No se encontró director para equipo "' + equipoEmpleado + '"');
+        erroresParaAdmin.push('No hay director configurado para el equipo <strong>' + equipoEmpleado + '</strong> — ' +
+          nombreEmpleado + ' solicitó días pero el director no fue notificado.');
       } else {
-        Logger.log('✅ Director encontrado: ' + infoDirector.nombre + ' → ' + correoDir);
+        Logger.log('✅ Director: ' + infoDirector.nombre + ' → ' + correoDir);
+      }
+      if (!correoEmp || correoEmp.trim() === '') {
+        Logger.log('⚠️ No se encontró correo para empleado "' + nombreEmpleado + '"');
+        erroresParaAdmin.push('No hay correo configurado para <strong>' + nombreEmpleado + '</strong> — ' +
+          'el empleado no recibió confirmación de su solicitud. Agrégalo en la hoja "Plantilla de Empleados".');
       }
 
       // Buscar si el empleado tiene supervisor (es un director)
@@ -2131,6 +2225,9 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
 
     // Marcar en verde las filas del historial donde se enviaron correos
     marcarCorreoEnviadoEnHistorial(Object.keys(gruposPorEmpleado));
+
+    // Notificar al admin si hubo problemas (no se encontró correo o director)
+    notificarErroresAdmin(erroresParaAdmin);
 
   } catch (error) {
     Logger.log('Error en enviarNotificacionNuevoRegistro: ' + error.message);
