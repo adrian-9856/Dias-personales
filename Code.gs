@@ -112,7 +112,7 @@ const CONFIG = {
     'Carmen Rossana Boche Noriega':               'rossana@creamosguatemala.org',
     'Mildred Alejandra Molina Valiente':          'mildred@creamosguatemala.org',
     'Yenifer Pamela Mejía de la Cruz':            'pamela@creamosguatemala.org',
-    'Liliana Román':                              'lily@creamosguatemala.org',
+    'Liliana Irasema Román Zepeda':               'lily@creamosguatemala.org',
     'Abraham Jose David Marcos Bámaca Nij':       'abraham@creamosguatemala.org',
     // Inclusión Laboral
     'Laura Alejandra Castañeda Leal':             'alejandra@creamosguatemala.org',
@@ -1143,7 +1143,7 @@ function crearHojaPlantillaEmpleados() {
     ['Carmen Rossana Boche Noriega',               'Educación',                 'rossana@creamosguatemala.org'],
     ['Mildred Alejandra Molina Valiente',          'Educación',                 'mildred@creamosguatemala.org'],
     ['Yenifer Pamela Mejía de la Cruz',            'Educación',                 'pamela@creamosguatemala.org'],
-    ['Liliana Román',                              'Educación',                 'lily@creamosguatemala.org'],
+    ['Liliana Irasema Román Zepeda',               'Educación',                 'lily@creamosguatemala.org'],
     ['Abraham Jose David Marcos Bámaca Nij',       'Educación',                 'abraham@creamosguatemala.org'],
     // Inclusión Laboral (5)
     ['Laura Alejandra Castañeda Leal',             'Inclusión Laboral',         'alejandra@creamosguatemala.org'],
