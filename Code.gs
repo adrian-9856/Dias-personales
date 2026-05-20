@@ -78,7 +78,7 @@ const CONFIG = {
   DIRECTORES_DEFAULT: {
     'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',               correo: 'melissa@creamosguatemala.org' },
     'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Agueta',               correo: 'melissa@creamosguatemala.org' },
-    'Operaciones':               { nombre: 'Alejandro Renato Valdéz Álvarez',          correo: 'renato@creamosguatemala.org' },
+    'Operaciones':               { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' },
     'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' },
     'Gestión de Impacto':        { nombre: 'Eneko Arberas García',                     correo: 'eneko@creamosguatemala.org' },
     'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',             correo: 'rossana@creamosguatemala.org' },
@@ -100,9 +100,7 @@ const CONFIG = {
     'Gerber Josué Álvarez':                       'gerber@creamosguatemala.org',
     'Estela Karina Oscal Pixtun':                 'karina@creamosguatemala.org',
     // Operaciones
-    'Alejandro Renato Valdéz Álvarez':            'renato@creamosguatemala.org',
     'Maritza Carolina Pérez López':               'maritza@creamosguatemala.org',
-    'Yhenifer Yaneth Aguilar Rodríguez de Pérez': 'yhenifer@creamosguatemala.org',
     'Juan Josué Alvarado Caxaj':                  'josue@creamosguatemala.org',
     // mi-eelo
     'Stephany Tatiana Fuentes Rodríguez':         'stephany@creamosguatemala.org',
