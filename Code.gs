@@ -2955,6 +2955,8 @@ function onOpen() {
 
     // ── Submenú: Herramientas ─────────────────────────────────────────────────
     var menuHerramientas = ui.createMenu('🔧 Herramientas')
+      .addItem('🆕 Aplicar actualización (sin borrar nada)', 'APLICAR_ACTUALIZACION')
+      .addSeparator()
       .addItem('✔️ Marcar historial antiguo como enviado', 'MARCAR_TODOS_COMO_ENVIADOS')
       .addItem('🔍 Ver columnas del formulario Kobo', 'diagnosticarEstructuraKobo')
       .addItem('📊 Diagnóstico del sistema', 'diagnosticarDocumento')
@@ -3971,6 +3973,120 @@ function diagnosticarEstructuraKobo() {
       ui.ButtonSet.OK
     );
   }
+}
+
+/**
+ * ACTUALIZACIÓN v2.2 — Aplica solo los cambios nuevos sin borrar ni reiniciar nada.
+ * Seguro de ejecutar en cualquier momento:
+ *   ✅ Crea la hoja "Supervisores" si no existe (o la actualiza si ya existe)
+ *   ✅ Agrega a Sharon Anabel en Plantilla de Empleados si no está
+ *   ✅ Elimina a Juan Josué y Celeste de Plantilla de Empleados si aún están
+ *   ✅ Actualiza Directores: Operaciones → Sharon, Inclusión Laboral → Stephany
+ *   ✅ NO toca Historial, Resumen, Configuración ni datos de KoboToolbox
+ */
+function APLICAR_ACTUALIZACION() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var cambios = [];
+
+  // ── 1. Hoja "Supervisores" ────────────────────────────────────────────────
+  try {
+    crearHojaSupervisores();
+    cambios.push('✅ Hoja "Supervisores" creada/actualizada');
+  } catch(e) {
+    cambios.push('⚠️ Supervisores: ' + e.message);
+  }
+
+  // ── 2. Plantilla de Empleados: cambios quirúrgicos ────────────────────────
+  try {
+    var sheetPl = ss.getSheetByName(CONFIG.SHEET_NAME_PLANTILLA);
+    if (!sheetPl) {
+      cambios.push('⚠️ Hoja "Plantilla de Empleados" no encontrada — omitida');
+    } else {
+      var lastRow = sheetPl.getLastRow();
+      var datos   = lastRow > 3 ? sheetPl.getRange(4, 1, lastRow - 3, 3).getValues() : [];
+
+      var tieneSharon  = false;
+      var filasEliminar = []; // índices base-0 de filas a eliminar
+
+      datos.forEach(function(fila, idx) {
+        var nombre = (fila[0] || '').toString().trim();
+        var norm   = normalizarTexto(nombre);
+        if (norm === normalizarTexto('Sharon Anabel Zacarías Cojulún')) tieneSharon = true;
+        if (norm === normalizarTexto('Juan Josué Alvarado Caxaj') ||
+            norm === normalizarTexto('Celeste Alejandra del Rosario García Cárdenas')) {
+          filasEliminar.push(idx + 4); // fila real en hoja (datos empiezan en fila 4)
+        }
+      });
+
+      // Eliminar de abajo hacia arriba para no desplazar índices
+      filasEliminar.sort(function(a,b){ return b-a; });
+      filasEliminar.forEach(function(fila) {
+        sheetPl.deleteRow(fila);
+        cambios.push('✅ Eliminado de Plantilla: fila ' + fila);
+      });
+
+      // Agregar Sharon si no está
+      if (!tieneSharon) {
+        sheetPl.appendRow(['Sharon Anabel Zacarías Cojulún', 'Operaciones', 'sharon@creamosguatemala.org']);
+        cambios.push('✅ Agregada a Plantilla: Sharon Anabel Zacarías Cojulún (Operaciones)');
+      } else {
+        cambios.push('ℹ️ Sharon Anabel ya estaba en Plantilla — no se duplicó');
+      }
+
+      if (filasEliminar.length === 0) {
+        cambios.push('ℹ️ Juan Josué y Celeste ya no estaban en Plantilla');
+      }
+    }
+  } catch(e) {
+    cambios.push('⚠️ Plantilla Empleados: ' + e.message);
+  }
+
+  // ── 3. Directores: actualizar Operaciones e Inclusión Laboral ────────────
+  try {
+    var sheetDir = ss.getSheetByName(CONFIG.SHEET_NAME_DIRECTORES);
+    if (!sheetDir) {
+      cambios.push('⚠️ Hoja "Directores" no encontrada — ejecuta "Ver/actualizar directores" desde el menú');
+    } else {
+      var lastRowDir = sheetDir.getLastRow();
+      var datosDir   = lastRowDir > 2 ? sheetDir.getRange(3, 1, lastRowDir - 2, 3).getValues() : [];
+      var actualizados = 0;
+
+      datosDir.forEach(function(fila, idx) {
+        var equipo = (fila[0] || '').toString().trim();
+        var norm   = normalizarTexto(equipo);
+        var filaReal = idx + 3;
+
+        if (norm === normalizarTexto('Operaciones')) {
+          sheetDir.getRange(filaReal, 2).setValue('Sharon Anabel Zacarías Cojulún');
+          sheetDir.getRange(filaReal, 3).setValue('sharon@creamosguatemala.org');
+          cambios.push('✅ Director Operaciones → Sharon Anabel (sharon@creamosguatemala.org)');
+          actualizados++;
+        }
+        if (norm === normalizarTexto('Inclusión Laboral')) {
+          sheetDir.getRange(filaReal, 2).setValue('Stephany Tatiana Fuentes Rodríguez');
+          sheetDir.getRange(filaReal, 3).setValue('stephany@creamosguatemala.org');
+          cambios.push('✅ Director Inclusión Laboral → Stephany (stephany@creamosguatemala.org)');
+          actualizados++;
+        }
+      });
+
+      if (actualizados === 0) {
+        cambios.push('ℹ️ No se encontraron filas de Operaciones/Inclusión Laboral en Directores');
+      }
+    }
+  } catch(e) {
+    cambios.push('⚠️ Directores: ' + e.message);
+  }
+
+  // ── Resultado ─────────────────────────────────────────────────────────────
+  Logger.log('APLICAR_ACTUALIZACION:\n' + cambios.join('\n'));
+  ui.alert(
+    '✅ Actualización aplicada',
+    'Resumen de cambios:\n\n' + cambios.join('\n') +
+    '\n\n✅ Historial, Resumen, Configuración y datos de Kobo NO fueron tocados.',
+    ui.ButtonSet.OK
+  );
 }
 
 /**
