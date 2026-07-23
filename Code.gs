@@ -38,7 +38,21 @@ const SUPERVISORES = {
   // Supervisados por Hannah
   'Eneko Arberas García': 'hannah@creamosguatemala.org',
   'Carmen Lucía Carías González de Zacher': 'hannah@creamosguatemala.org',
-  'Stephany Tatiana Fuentes Rodríguez': 'hannah@creamosguatemala.org'
+  'Stephany Tatiana Fuentes Rodríguez': 'hannah@creamosguatemala.org',
+
+  // Sharon (Operaciones) supervisada por Carmen
+  'Sharon Anabel Zacarías Cojulún': 'carmen@creamosguatemala.org'
+};
+
+/**
+ * NOTIFICAR_A — Enrutamiento individual de notificaciones.
+ * Cuando un empleado listado aquí toma días, el correo va a esta persona
+ * en lugar del director del equipo.
+ * Editable también desde la hoja "Supervisores" (sin tocar código).
+ */
+const NOTIFICAR_A = {
+  'Irma Jeaneth García':      'beatriz@creamosguatemala.org',
+  'Jansel Abel Ojeda Posadas':'beatriz@creamosguatemala.org'
 };
 
 const CONFIG = {
@@ -58,6 +72,7 @@ const CONFIG = {
   SHEET_NAME_HISTORIAL: 'Historial de Solicitudes',
   SHEET_NAME_DIRECTORES: 'Directores',
   SHEET_NAME_PLANTILLA: 'Plantilla de Empleados',
+  SHEET_NAME_SUPERVISORES: 'Supervisores',
 
   // Equipos disponibles
   EQUIPOS: [
@@ -78,13 +93,13 @@ const CONFIG = {
   DIRECTORES_DEFAULT: {
     'Apoyo emocional':           { nombre: 'Iris Melissa Payes Argueta',               correo: 'melissa@creamosguatemala.org' },
     'Apoyo emocinal':            { nombre: 'Iris Melissa Payes Agueta',               correo: 'melissa@creamosguatemala.org' },
-    'Operaciones':               { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' },
+    'Operaciones':               { nombre: 'Sharon Anabel Zacarías Cojulún',           correo: 'sharon@creamosguatemala.org' },
     'mi-eelo':                   { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' },
     'Gestión de Impacto':        { nombre: 'Eneko Arberas García',                     correo: 'eneko@creamosguatemala.org' },
     'Educación':                 { nombre: 'Carmen Rossana Boche Noriega',             correo: 'rossana@creamosguatemala.org' },
     'Centro de cuidado infantil':{ nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'carmen@creamosguatemala.org' },
     'Administración':            { nombre: 'Carmen Lucía Carías González de Zacher',   correo: 'carmen@creamosguatemala.org' },
-    'Inclusión Laboral':         { nombre: 'Laura Alejandra Castañeda Leal',           correo: 'alejandra@creamosguatemala.org' }
+    'Inclusión Laboral':         { nombre: 'Stephany Tatiana Fuentes Rodríguez',       correo: 'stephany@creamosguatemala.org' }
   },
 
   // Correos de empleados (nombre completo → correo)
@@ -101,13 +116,12 @@ const CONFIG = {
     'Estela Karina Oscal Pixtun':                 'karina@creamosguatemala.org',
     // Operaciones
     'Maritza Carolina Pérez López':               'maritza@creamosguatemala.org',
-    'Juan Josué Alvarado Caxaj':                  'josue@creamosguatemala.org',
+    'Sharon Anabel Zacarías Cojulún':             'sharon@creamosguatemala.org',
     // mi-eelo
     'Stephany Tatiana Fuentes Rodríguez':         'stephany@creamosguatemala.org',
     'Jansel Abel Ojeda Posadas':                  'jansel@creamosguatemala.org',
     'Eustolia Beatriz González Gómez':            'beatriz@creamosguatemala.org',
     'Irma Jeaneth García':                        'irma@creamosguatemala.org',
-    'Celeste Alejandra del Rosario García Cárdenas': 'celeste@creamosguatemala.org',
     // Educación
     'Carmen Rossana Boche Noriega':               'rossana@creamosguatemala.org',
     'Mildred Alejandra Molina Valiente':          'mildred@creamosguatemala.org',
@@ -1225,13 +1239,12 @@ function crearHojaPlantillaEmpleados() {
     ['Estela Karina Oscal Pixtun',                 'Apoyo emocional',           'karina@creamosguatemala.org'],
     // Operaciones (2)
     ['Maritza Carolina Pérez López',               'Operaciones',               'maritza@creamosguatemala.org'],
-    ['Juan Josué Alvarado Caxaj',                  'Operaciones',               'josue@creamosguatemala.org'],
-    // mi-eelo (5)
+    ['Sharon Anabel Zacarías Cojulún',             'Operaciones',               'sharon@creamosguatemala.org'],
+    // mi-eelo (4)
     ['Stephany Tatiana Fuentes Rodríguez',         'mi-eelo',                   'stephany@creamosguatemala.org'],
     ['Jansel Abel Ojeda Posadas',                  'mi-eelo',                   'jansel@creamosguatemala.org'],
     ['Eustolia Beatriz González Gómez',            'mi-eelo',                   'beatriz@creamosguatemala.org'],
     ['Irma Jeaneth García',                        'mi-eelo',                   'irma@creamosguatemala.org'],
-    ['Celeste Alejandra del Rosario García Cárdenas', 'mi-eelo',                'celeste@creamosguatemala.org'],
     // Educación (5)
     ['Carmen Rossana Boche Noriega',               'Educación',                 'rossana@creamosguatemala.org'],
     ['Mildred Alejandra Molina Valiente',          'Educación',                 'mildred@creamosguatemala.org'],
@@ -1589,6 +1602,126 @@ function buscarSupervisor(nombreEmpleado) {
   }
 
   return null;
+}
+
+/**
+ * Lee la hoja "Supervisores" y devuelve un mapa { nombre → correoNotificar }.
+ * Columna A: Nombre del Empleado
+ * Columna B: Notificar A — quién recibe el correo cuando esta persona toma días
+ *            (deja vacío para usar el director del equipo por defecto)
+ * Columna C: Supervisor — correo extra/CC cuando esta persona es coordinadora
+ *            (deja vacío si no aplica)
+ */
+function obtenerNotificarADesdeHoja() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SUPERVISORES);
+    if (!sheet || sheet.getLastRow() <= 3) return {};
+
+    var datos = sheet.getRange(4, 1, sheet.getLastRow() - 3, 3).getValues();
+    var mapa = {};
+    datos.forEach(function(fila) {
+      var nombre = fila[0] ? fila[0].toString().trim() : '';
+      var notificarA = fila[1] ? fila[1].toString().trim() : '';
+      var supervisor = fila[2] ? fila[2].toString().trim() : '';
+      if (nombre) {
+        mapa[nombre] = { notificarA: notificarA, supervisor: supervisor };
+        mapa[normalizarTexto(nombre)] = { notificarA: notificarA, supervisor: supervisor };
+      }
+    });
+    return mapa;
+  } catch(e) {
+    Logger.log('Error leyendo hoja Supervisores: ' + e.message);
+    return {};
+  }
+}
+
+/**
+ * Devuelve el correo al que debe llegar el aviso cuando `nombre` toma días,
+ * anulando al director del equipo. Primero busca en la hoja "Supervisores",
+ * luego en la constante NOTIFICAR_A. Devuelve null si no hay override.
+ */
+function buscarNotificarA(nombre) {
+  if (!nombre) return null;
+  var datos = obtenerNotificarADesdeHoja();
+  var nombreNorm = normalizarTexto(nombre);
+  var entrada = datos[nombre] || datos[nombreNorm];
+  if (entrada && entrada.notificarA) return entrada.notificarA;
+
+  if (NOTIFICAR_A[nombre]) return NOTIFICAR_A[nombre];
+  for (var n in NOTIFICAR_A) {
+    if (normalizarTexto(n) === nombreNorm) return NOTIFICAR_A[n];
+  }
+  return null;
+}
+
+/**
+ * Devuelve el correo del supervisor de `nombre` leyendo primero la hoja "Supervisores",
+ * luego el objeto SUPERVISORES (respaldo en código).
+ */
+function buscarSupervisorConHoja(nombre) {
+  if (!nombre) return null;
+  var datos = obtenerNotificarADesdeHoja();
+  var nombreNorm = normalizarTexto(nombre);
+  var entrada = datos[nombre] || datos[nombreNorm];
+  if (entrada && entrada.supervisor) return entrada.supervisor;
+
+  return buscarSupervisor(nombre);
+}
+
+/**
+ * Crea o actualiza la hoja "Supervisores" con las reglas de enrutamiento.
+ * Cualquier persona con acceso puede editar esta hoja para cambiar quién recibe
+ * las notificaciones, sin necesidad de tocar el código.
+ */
+function crearHojaSupervisores() {
+  var ss = obtenerSpreadsheetConRetry();
+  var sheet = ss.getSheetByName(CONFIG.SHEET_NAME_SUPERVISORES);
+  if (!sheet) sheet = ss.insertSheet(CONFIG.SHEET_NAME_SUPERVISORES);
+
+  ejecutarConRetry(function() { sheet.clear(); }, 'limpiar hoja Supervisores', 5);
+
+  sheet.getRange('A1').setValue('REGLAS DE NOTIFICACIÓN — Supervisores y Enrutamiento')
+    .setFontSize(13).setFontWeight('bold')
+    .setBackground('#0f9d58').setFontColor('#ffffff');
+  sheet.getRange('A1:C1').merge();
+
+  sheet.getRange('A2').setValue(
+    'Columna B: a quién le llega el correo cuando ESA persona toma días (deja vacío = director del equipo por defecto).  ' +
+    'Columna C: supervisor/a extra (CC) cuando esa persona es coordinadora.'
+  ).setFontStyle('italic').setFontColor('#555555').setWrap(true);
+  sheet.getRange('A2:C2').merge();
+  sheet.setRowHeight(2, 40);
+
+  sheet.getRange(3, 1, 1, 3)
+    .setValues([['Nombre del Empleado', 'Notificar A (correo)', 'Supervisor / CC (correo)']])
+    .setFontWeight('bold').setBackground('#e8f0fe');
+
+  var reglas = [
+    ['Irma Jeaneth García',           'beatriz@creamosguatemala.org', ''],
+    ['Jansel Abel Ojeda Posadas',      'beatriz@creamosguatemala.org', ''],
+    ['Sharon Anabel Zacarías Cojulún', '',                             'carmen@creamosguatemala.org']
+  ];
+
+  sheet.getRange(4, 1, reglas.length, 3).setValues(reglas);
+  sheet.getRange(4, 1, reglas.length, 3).setBackground('#f8f9fa');
+
+  for (var j = 1; j <= 3; j++) sheet.autoResizeColumn(j);
+  sheet.setColumnWidth(2, 260);
+  sheet.setColumnWidth(3, 260);
+
+  var startNote = 4 + reglas.length + 2;
+  sheet.getRange(startNote, 1).setValue('NOTAS:').setFontWeight('bold');
+  sheet.getRange(startNote + 1, 1).setValue('• Si "Notificar A" está vacío, el correo va al director del equipo configurado en la hoja "Directores".');
+  sheet.getRange(startNote + 2, 1).setValue('• Si "Supervisor" está vacío, no se envía copia adicional.');
+  sheet.getRange(startNote + 3, 1).setValue('• Puedes agregar más filas aquí para configurar nuevas personas sin tocar el código.');
+  sheet.getRange(startNote + 1, 1, 3, 1).setFontColor('#555555').setFontStyle('italic');
+
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    'Hoja "Supervisores" lista. Puedes editarla directamente para cambiar el enrutamiento.',
+    'Supervisores', 7
+  );
+  Logger.log('Hoja Supervisores creada/actualizada');
 }
 
 /**
@@ -2136,12 +2269,19 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
       var correoDir    = infoDirector.correo;
       var correoEmp    = buscarCorreoEmpleado(nombreEmpleado);
 
+      // Override: si hay regla individual para este empleado, usar ese correo en vez del director del equipo
+      var overrideNotificar = buscarNotificarA(nombreEmpleado);
+      if (overrideNotificar) {
+        Logger.log('🔀 NOTIFICAR_A override para ' + nombreEmpleado + ': ' + correoDir + ' → ' + overrideNotificar);
+        correoDir = overrideNotificar;
+      }
+
       if (!correoDir || correoDir === '') {
         Logger.log('⚠️ No se encontró director para equipo "' + equipoEmpleado + '"');
         erroresParaAdmin.push('No hay director configurado para el equipo <strong>' + equipoEmpleado + '</strong> — ' +
           nombreEmpleado + ' solicitó días pero el director no fue notificado.');
       } else {
-        Logger.log('✅ Director: ' + infoDirector.nombre + ' → ' + correoDir);
+        Logger.log('✅ Notificar a: ' + correoDir + (overrideNotificar ? ' (override individual)' : ' (director equipo)'));
       }
       if (!correoEmp || correoEmp.trim() === '') {
         Logger.log('⚠️ No se encontró correo para empleado "' + nombreEmpleado + '"');
@@ -2149,8 +2289,8 @@ function enviarNotificacionNuevoRegistro(registrosNuevos, headers, datosProcessa
           'el empleado no recibió confirmación de su solicitud. Agrégalo en la hoja "Plantilla de Empleados".');
       }
 
-      // Buscar si el empleado tiene supervisor (es un director)
-      var correoSupervisor = buscarSupervisor(nombreEmpleado);
+      // Buscar si el empleado tiene supervisor (es un director/coordinadora)
+      var correoSupervisor = buscarSupervisorConHoja(nombreEmpleado);
       var esDirector = correoSupervisor !== null;
 
       if (esDirector) {
@@ -2810,7 +2950,8 @@ function onOpen() {
     var menuPersonal = ui.createMenu('👥 Personal')
       .addItem('➕ Agregar empleado nuevo', 'agregarNuevoEmpleado')
       .addItem('🔄 Ver/actualizar lista de empleados', 'actualizarEmpleados')
-      .addItem('👥 Ver/actualizar directores', 'crearHojaDirectores');
+      .addItem('👥 Ver/actualizar directores', 'crearHojaDirectores')
+      .addItem('⚙️ Ver/actualizar Supervisores (enrutamiento)', 'crearHojaSupervisores');
 
     // ── Submenú: Herramientas ─────────────────────────────────────────────────
     var menuHerramientas = ui.createMenu('🔧 Herramientas')
