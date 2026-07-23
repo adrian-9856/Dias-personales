@@ -2956,6 +2956,7 @@ function onOpen() {
     // ── Submenú: Herramientas ─────────────────────────────────────────────────
     var menuHerramientas = ui.createMenu('🔧 Herramientas')
       .addItem('🆕 Aplicar actualización (sin borrar nada)', 'APLICAR_ACTUALIZACION')
+      .addItem('🗑️ Limpiar historial de personas eliminadas', 'LIMPIAR_PERSONAS_ELIMINADAS')
       .addSeparator()
       .addItem('✔️ Marcar historial antiguo como enviado', 'MARCAR_TODOS_COMO_ENVIADOS')
       .addItem('🔍 Ver columnas del formulario Kobo', 'diagnosticarEstructuraKobo')
@@ -4085,6 +4086,75 @@ function APLICAR_ACTUALIZACION() {
     '✅ Actualización aplicada',
     'Resumen de cambios:\n\n' + cambios.join('\n') +
     '\n\n✅ Historial, Resumen, Configuración y datos de Kobo NO fueron tocados.',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Elimina del Historial de Solicitudes todas las filas que pertenezcan
+ * a personas que ya no están en la organización.
+ * Muestra un resumen antes de borrar y pide confirmación.
+ */
+function LIMPIAR_PERSONAS_ELIMINADAS() {
+  var ui  = SpreadsheetApp.getUi();
+  var ss  = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Personas a eliminar (agregar más nombres aquí si es necesario en el futuro)
+  var personasEliminar = [
+    'Juan Josué Alvarado Caxaj',
+    'Celeste Alejandra del Rosario García Cárdenas'
+  ];
+  var personasNorm = personasEliminar.map(normalizarTexto);
+
+  // ── Historial ─────────────────────────────────────────────────────────────
+  var sheetH = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
+  var filasEncontradas = [];
+
+  if (sheetH && sheetH.getLastRow() > 1) {
+    var lastRow  = sheetH.getLastRow();
+    var datos    = sheetH.getRange(2, 1, lastRow - 1, 8).getValues();
+
+    datos.forEach(function(fila, idx) {
+      var nombre = normalizarTexto((fila[2] || '').toString());
+      if (personasNorm.indexOf(nombre) >= 0) {
+        filasEncontradas.push({ fila: idx + 2, nombre: (fila[2] || '').toString().trim() });
+      }
+    });
+  }
+
+  if (filasEncontradas.length === 0) {
+    ui.alert('ℹ️ Sin registros', 'No se encontraron registros de estas personas en el Historial.\n\nEl Historial ya está limpio.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Mostrar resumen y pedir confirmación
+  var detalle = filasEncontradas.map(function(r) { return '  • Fila ' + r.fila + ': ' + r.nombre; }).join('\n');
+  var confirmacion = ui.alert(
+    '🗑️ Limpiar registros antiguos',
+    'Se encontraron ' + filasEncontradas.length + ' fila(s) en el Historial:\n\n' +
+    detalle + '\n\n' +
+    '¿Eliminar estas filas del Historial?\n\n' +
+    '(El Resumen se actualizará automáticamente en la próxima ejecución.)',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (confirmacion !== ui.Button.YES) {
+    ui.alert('Operación cancelada. No se eliminó nada.');
+    return;
+  }
+
+  // Eliminar de abajo hacia arriba para no desplazar índices
+  var filasOrdenadas = filasEncontradas.map(function(r) { return r.fila; }).sort(function(a,b){ return b-a; });
+  filasOrdenadas.forEach(function(fila) {
+    sheetH.deleteRow(fila);
+  });
+
+  Logger.log('LIMPIAR_PERSONAS_ELIMINADAS: ' + filasEncontradas.length + ' fila(s) eliminadas del Historial.');
+  ui.alert(
+    '✅ Limpieza completada',
+    filasEncontradas.length + ' fila(s) eliminadas del Historial.\n\n' +
+    'El Resumen se actualizará solo la próxima vez que el sistema corra\n' +
+    '(o usa "Actualizar todo ahora" del menú).',
     ui.ButtonSet.OK
   );
 }
