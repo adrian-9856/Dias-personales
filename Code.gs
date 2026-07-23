@@ -4091,70 +4091,72 @@ function APLICAR_ACTUALIZACION() {
 }
 
 /**
- * Elimina del Historial de Solicitudes todas las filas que pertenezcan
- * a personas que ya no están en la organización.
- * Muestra un resumen antes de borrar y pide confirmación.
+ * Marca en gris las filas del Historial de personas que ya no están en la organización.
+ * ⚠️ NO borra las filas — borrarlas haría que el sistema redetecte esas solicitudes
+ * como "nuevas" y reenvíe correos antiguos. Mantenerlas (marcadas) es lo correcto.
  */
 function LIMPIAR_PERSONAS_ELIMINADAS() {
   var ui  = SpreadsheetApp.getUi();
   var ss  = SpreadsheetApp.getActiveSpreadsheet();
 
-  // Personas a eliminar (agregar más nombres aquí si es necesario en el futuro)
-  var personasEliminar = [
+  var personasRetiradas = [
     'Juan Josué Alvarado Caxaj',
     'Celeste Alejandra del Rosario García Cárdenas'
   ];
-  var personasNorm = personasEliminar.map(normalizarTexto);
+  var personasNorm = personasRetiradas.map(normalizarTexto);
 
-  // ── Historial ─────────────────────────────────────────────────────────────
   var sheetH = ss.getSheetByName(CONFIG.SHEET_NAME_HISTORIAL);
   var filasEncontradas = [];
 
   if (sheetH && sheetH.getLastRow() > 1) {
-    var lastRow  = sheetH.getLastRow();
-    var datos    = sheetH.getRange(2, 1, lastRow - 1, 8).getValues();
-
+    var lastRow = sheetH.getLastRow();
+    var datos   = sheetH.getRange(2, 1, lastRow - 1, 8).getValues();
     datos.forEach(function(fila, idx) {
       var nombre = normalizarTexto((fila[2] || '').toString());
-      if (personasNorm.indexOf(nombre) >= 0) {
+      var estado = (fila[7] || '').toString();
+      if (personasNorm.indexOf(nombre) >= 0 && estado !== 'Persona retirada') {
         filasEncontradas.push({ fila: idx + 2, nombre: (fila[2] || '').toString().trim() });
       }
     });
   }
 
   if (filasEncontradas.length === 0) {
-    ui.alert('ℹ️ Sin registros', 'No se encontraron registros de estas personas en el Historial.\n\nEl Historial ya está limpio.', ui.ButtonSet.OK);
+    ui.alert(
+      'ℹ️ Sin cambios',
+      'No se encontraron filas pendientes de marcar.\n\n' +
+      'Las filas ya están marcadas o estas personas no tienen registros en el Historial.',
+      ui.ButtonSet.OK
+    );
     return;
   }
 
-  // Mostrar resumen y pedir confirmación
   var detalle = filasEncontradas.map(function(r) { return '  • Fila ' + r.fila + ': ' + r.nombre; }).join('\n');
   var confirmacion = ui.alert(
-    '🗑️ Limpiar registros antiguos',
-    'Se encontraron ' + filasEncontradas.length + ' fila(s) en el Historial:\n\n' +
-    detalle + '\n\n' +
-    '¿Eliminar estas filas del Historial?\n\n' +
-    '(El Resumen se actualizará automáticamente en la próxima ejecución.)',
+    '🗂️ Marcar personas retiradas en Historial',
+    'Se encontraron ' + filasEncontradas.length + ' fila(s):\n\n' + detalle + '\n\n' +
+    'Se marcarán en gris como "Persona retirada".\n' +
+    'NO se borran — esto es intencional para evitar que el sistema\n' +
+    'reenvíe correos de solicitudes antiguas.\n\n' +
+    '¿Continuar?',
     ui.ButtonSet.YES_NO
   );
 
   if (confirmacion !== ui.Button.YES) {
-    ui.alert('Operación cancelada. No se eliminó nada.');
+    ui.alert('Operación cancelada.');
     return;
   }
 
-  // Eliminar de abajo hacia arriba para no desplazar índices
-  var filasOrdenadas = filasEncontradas.map(function(r) { return r.fila; }).sort(function(a,b){ return b-a; });
-  filasOrdenadas.forEach(function(fila) {
-    sheetH.deleteRow(fila);
+  filasEncontradas.forEach(function(r) {
+    sheetH.getRange(r.fila, 8).setValue('Persona retirada');
+    sheetH.getRange(r.fila, 1, 1, 8).setBackground('#cccccc').setFontColor('#666666');
   });
 
-  Logger.log('LIMPIAR_PERSONAS_ELIMINADAS: ' + filasEncontradas.length + ' fila(s) eliminadas del Historial.');
+  SpreadsheetApp.flush();
+  Logger.log('LIMPIAR_PERSONAS_ELIMINADAS: ' + filasEncontradas.length + ' fila(s) marcadas como "Persona retirada".');
   ui.alert(
-    '✅ Limpieza completada',
-    filasEncontradas.length + ' fila(s) eliminadas del Historial.\n\n' +
-    'El Resumen se actualizará solo la próxima vez que el sistema corra\n' +
-    '(o usa "Actualizar todo ahora" del menú).',
+    '✅ Listo',
+    filasEncontradas.length + ' fila(s) marcadas en gris como "Persona retirada".\n\n' +
+    'El sistema NO volverá a procesar esas solicitudes ni enviará correos.',
     ui.ButtonSet.OK
   );
 }
